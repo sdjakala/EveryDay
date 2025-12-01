@@ -1,0 +1,6 @@
+{
+  "name": "news",
+  "description": "News feed",
+  "enabled": true,
+  "minRank": 0
+}

@@ -1,0 +1,6 @@
+{
+  "name": "grocery",
+  "description": "Simple grocery list grouped by sections",
+  "enabled": true,
+  "minRank": 1
+}

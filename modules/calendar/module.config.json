@@ -1,0 +1,6 @@
+{
+  "name": "calendar",
+  "description": "Calendar events",
+  "enabled": true,
+  "minRank": 0
+}

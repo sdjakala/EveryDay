@@ -1,0 +1,6 @@
+{
+  "name": "recipes",
+  "description": "Save recipes, ingredients and instructions",
+  "enabled": true,
+  "minRank": 0
+}

@@ -1,0 +1,56 @@
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime files
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor directories and files
+.vscode/
+.idea/
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
+
+# Coverage and build outputs
+coverage/
+dist/
+
+# OS files
+Thumbs.db
+
+# Optional: local data files
+# If you want to keep local runtime data out of git, uncomment the following line:
+# /data/
+# or ignore only generated backend files:
+# /data/backend_*.json
+
+# Ignore test and IDE helpers
+.vscode-test/
+
+# Other
+/.env.local
+
+# Keep package-lock.json / yarn.lock committed (comment out if you prefer ignoring)
+.env.example
+AZURE_SETUP.md

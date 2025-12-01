@@ -1,0 +1,6 @@
+{
+  "name": "tasks",
+  "description": "Task lists and assignments",
+  "enabled": true,
+  "minRank": 1
+}

@@ -1,0 +1,26 @@
+{
+  "name": "everyday-pwa",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
+  },
+  "dependencies": {
+    "isomorphic-unfetch": "^3.1.0",
+    "next": "13.5.6",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.7",
+    "eslint": "8.44.0",
+    "eslint-config-next": "13.5.6",
+    "prettier": "3.6.0",
+    "typescript": "5.1.6"
+  }
+}

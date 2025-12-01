@@ -1,0 +1,49 @@
+[
+  {
+    "id": "w6l2zcs",
+    "title": "Test",
+    "instructions": [
+      "Do it"
+    ],
+    "ingredients": [
+      {
+        "id": "ze2yvdo",
+        "title": "Toast",
+        "section": "Pantry"
+      }
+    ],
+    "planned": false,
+    "createdAt": "2025-11-28T05:03:04.345Z",
+    "updatedAt": "2025-11-28T05:03:04.345Z"
+  },
+  {
+    "id": "8ycwy7y",
+    "title": "Test",
+    "instructions": [],
+    "ingredients": [
+      {
+        "id": "abks94d",
+        "title": "Milk",
+        "section": "Dairy"
+      }
+    ],
+    "planned": false,
+    "createdAt": "2025-11-28T04:21:26.710Z",
+    "updatedAt": "2025-11-28T04:21:26.710Z"
+  },
+  {
+    "id": "xmub2d8",
+    "title": "test",
+    "instructions": [],
+    "ingredients": [
+      {
+        "id": "rlh7id9",
+        "title": "meat",
+        "section": "Meat"
+      }
+    ],
+    "planned": false,
+    "createdAt": "2025-11-28T04:10:27.978Z",
+    "updatedAt": "2025-11-28T04:10:27.978Z"
+  }
+]

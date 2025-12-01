@@ -1,0 +1,34 @@
+[
+  {
+    "name": "tasks",
+    "description": "Task lists and assignments",
+    "enabled": true,
+    "minRank": 1
+  },
+  {
+    "name": "calendar",
+    "description": "Calendar events viewer",
+    "enabled": true,
+    "minRank": 0
+  },
+  {
+    "name": "news",
+    "description": "External news feed",
+    "enabled": true,
+    "minRank": 0
+  }
+  ,
+  {
+    "name": "grocery",
+    "description": "Grocery lists grouped by section",
+    "enabled": true,
+    "minRank": 0
+  }
+  ,
+  {
+    "name": "recipes",
+    "description": "Save recipes and push ingredients to grocery",
+    "enabled": true,
+    "minRank": 0
+  }
+]
