@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Icon from "../components/Icon";
 
@@ -19,13 +19,12 @@ export default function Dashboard() {
   const [modules, setModules] = useState<ModuleMeta[]>([]);
   const [user] = useState<User>({ id: "1", name: "Demo User", rank: 1 });
   const [pinned, setPinned] = useState<string | null>(null);
-  const [touchDragging, setTouchDragging] = useState<string | null>(null);
-  const [touchOver, setTouchOver] = useState<string | null>(null);
-  const [touchStartPos, setTouchStartPos] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-  const [touchCandidate, setTouchCandidate] = useState<string | null>(null);
+  // Drag/touch reordering disabled due to mobile scrolling issues.
+  // The related state is left commented for easy re-enable later.
+  // const [touchDragging, setTouchDragging] = useState<string | null>(null);
+  // const [touchOver, setTouchOver] = useState<string | null>(null);
+  // const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+  // const [touchCandidate, setTouchCandidate] = useState<string | null>(null);
 
   useEffect(() => {
     // fetch modules then apply saved order (if any)
@@ -60,55 +59,25 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Drag-and-drop handlers for reordering modules
-  const onDragStart = (e: React.DragEvent<HTMLDivElement>, name: string) => {
-    try {
-      e.dataTransfer.setData("text/plain", name);
-      e.dataTransfer.effectAllowed = "move";
-    } catch (err) {
-      // Ignore dataTransfer errors
-    }
-  };
+  // Long-press reorder implementation
+  // We implement a pointer-based long-press so mobile users can reorder
+  // modules without interfering with normal scroll. Long-press threshold
+  // is 350ms. Interactive sub-elements (buttons/links/inputs) are ignored.
+  const longPressTimer = useRef<number | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<string | null>(null);
 
-  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    try {
-      e.dataTransfer.dropEffect = "move";
-    } catch (err) {
-      // Ignore dropEffect errors
-    }
-  };
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    };
+  }, []);
 
-  const onDrop = (e: React.DragEvent<HTMLDivElement>, targetName: string) => {
-    e.preventDefault();
-    try {
-      const srcName = e.dataTransfer.getData("text/plain");
-      if (!srcName || srcName === targetName) return;
-      const srcIdx = modules.findIndex((m) => m.name === srcName);
-      const tgtIdx = modules.findIndex((m) => m.name === targetName);
-      if (srcIdx === -1 || tgtIdx === -1) return;
-      const next = [...modules];
-      const [moved] = next.splice(srcIdx, 1);
-      next.splice(tgtIdx, 0, moved);
-      setModules(next);
-      // persist order
-      try {
-        localStorage.setItem(
-          "moduleOrder",
-          JSON.stringify(next.map((m) => m.name))
-        );
-      } catch (err) {
-        // Ignore localStorage errors
-      }
-    } catch (err) {
-      // Ignore drop errors
-    }
-  };
-
-  // Touch handlers for mobile reordering
-  // Touch handling with movement threshold to avoid accidental taps causing drag
-  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>, name: string) => {
-    // ignore if the touch started on an interactive control (button/input/link)
+  const handlePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    name: string
+  ) => {
+    // ignore pointer on controls
     try {
       const tg = e.target as HTMLElement;
       if (
@@ -119,57 +88,53 @@ export default function Dashboard() {
         return;
       }
     } catch (err) {
-      // Ignore element traversal errors
+      // ignore traversal errors
     }
 
-    const t = e.touches && e.touches[0];
-    if (!t) return;
-    setTouchStartPos({ x: t.clientX, y: t.clientY });
-    setTouchCandidate(name);
-    setTouchOver(name);
+    // start long-press timer
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => {
+      setDragging(name);
+      try {
+        document.body.style.touchAction = "none";
+      } catch (err) {
+        // ignore
+      }
+    }, 350);
   };
 
-  const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    const t = e.touches && e.touches[0];
-    if (!t) return;
-    const start = touchStartPos;
-    if (start && touchCandidate && !touchDragging) {
-      const dx = Math.abs(t.clientX - start.x);
-      const dy = Math.abs(t.clientY - start.y);
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      // only start drag if finger moved more than threshold (px)
-      if (dist > 8) {
-        setTouchDragging(touchCandidate);
-        try {
-          document.body.style.touchAction = "none";
-        } catch (err) {
-          // Ignore touchAction errors
-        }
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    // if not dragging, cancel if movement is significant
+    if (!dragging) {
+      // if pointer moved before long-press, cancel timer
+      if (longPressTimer.current) {
+        window.clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
       }
+      return;
     }
 
-    if (!touchDragging) return;
+    const p = e as unknown as PointerEvent;
     const el = document.elementFromPoint(
-      t.clientX,
-      t.clientY
+      p.clientX,
+      p.clientY
     ) as HTMLElement | null;
     if (!el) return;
     const card =
       el.closest && (el.closest(".module-card") as HTMLElement | null);
     const name = card?.dataset?.modulename || null;
-    if (name && name !== touchOver) setTouchOver(name);
+    if (name && name !== dragOver) setDragOver(name);
   };
 
-  const onTouchEnd = () => {
-    // if drag never started, treat as a tap -> reset
-    if (!touchDragging) {
-      setTouchStartPos(null);
-      setTouchCandidate(null);
-      setTouchOver(null);
-      return;
+  const handlePointerUp = () => {
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
     }
-    const srcName = touchDragging;
-    const tgtName = touchOver || touchDragging;
+    if (!dragging) return;
+
+    const srcName = dragging;
+    const tgtName = dragOver || dragging;
     if (srcName && tgtName && srcName !== tgtName) {
       const srcIdx = modules.findIndex((m) => m.name === srcName);
       const tgtIdx = modules.findIndex((m) => m.name === tgtName);
@@ -184,26 +149,17 @@ export default function Dashboard() {
             JSON.stringify(next.map((m) => m.name))
           );
         } catch (err) {
-          // Ignore localStorage errors
+          // ignore
         }
       }
     }
-    // cleanup
-    setTouchStartPos(null);
-    setTouchCandidate(null);
-    setTouchDragging(null);
-    setTouchOver(null);
+
+    setDragging(null);
+    setDragOver(null);
     try {
       document.body.style.touchAction = "";
     } catch (err) {
-      // Ignore touchAction errors
-    }
-    try {
-      document
-        .querySelectorAll(".module-card.dragging")
-        .forEach((el) => el.classList.remove("dragging"));
-    } catch (err) {
-      // Ignore DOM query errors
+      // ignore
     }
   };
 
@@ -277,22 +233,20 @@ export default function Dashboard() {
               }
             );
 
-            const isOver = touchOver === mod.name;
+            // touch/tdragging disabled — handled by dragOver/over variables
+            const isDragging = dragging === mod.name;
+            const over = dragOver === mod.name;
             return (
               <div
                 key={mod.name}
-                className={`module-card${touchDragging === mod.name ? " dragging" : ""}`}
+                className={`module-card${isDragging ? " dragging" : ""}`}
                 data-modulename={mod.name}
-                draggable
-                onDragStart={(e) => onDragStart(e, mod.name)}
-                onDragOver={onDragOver}
-                onDrop={(e) => onDrop(e, mod.name)}
-                onTouchStart={(e) => onTouchStart(e, mod.name)}
-                onTouchMove={onTouchMove}
-                onTouchEnd={onTouchEnd}
+                onPointerDown={(e) => handlePointerDown(e, mod.name)}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
                 style={{
-                  cursor: "grab",
-                  border: isOver ? "2px dashed var(--accent)" : undefined,
+                  border: over ? "2px dashed var(--accent)" : undefined,
                 }}
               >
                 <div
