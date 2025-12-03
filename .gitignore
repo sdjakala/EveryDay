@@ -54,3 +54,5 @@ Thumbs.db
 # Keep package-lock.json / yarn.lock committed (comment out if you prefer ignoring)
 .env.example
 AZURE_SETUP.md
+.env.production
+PWA-DeploymentToken.json
