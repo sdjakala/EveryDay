@@ -36,6 +36,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Icon name="user" />
           <span>Profile</span>
         </Link>
+        <Link className="nav-btn" href="/admin/requests">
+          <Icon name="settings" />
+          <span>Admin</span>
+        </Link>
       </nav>
     </div>
   );
