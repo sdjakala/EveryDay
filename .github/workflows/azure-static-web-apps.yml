@@ -63,3 +63,5 @@ jobs:
           app_location: "/"
           api_location: ""
           output_location: ".next"
+          production_branch: "main"
+          skip_app_build: true
