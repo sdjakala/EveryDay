@@ -53,6 +53,7 @@ jobs:
               GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
               SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
               ADMIN_SECRET="${{ secrets.ADMIN_SECRET }}"
+              ENABLE_AUTH_MIDDLEWARE="true"
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:

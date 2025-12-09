@@ -93,6 +93,11 @@ async function verifyJwtHs256(token: string, secret: string) {
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
+  const ENABLE_MIDDLEWARE = process.env.ENABLE_AUTH_MIDDLEWARE === "true";
+  if (!ENABLE_MIDDLEWARE) {
+    return NextResponse.next();
+  } 
+
   // allow public files and auth endpoints
   if (isPublicPath(pathname)) return NextResponse.next();
 
