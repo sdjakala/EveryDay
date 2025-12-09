@@ -8,7 +8,7 @@
       "allowedRoles": ["anonymous"]
     }
   ],
-  "resposeOverrides": {
+  "responseOverrides": {
     "404": {
         "rewrite": "/404"
     }
