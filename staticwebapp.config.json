@@ -1,16 +1,4 @@
-{
-  "navigationFallback": {
-    "rewrite": "/index.html",
-    "exclude": [
-      "/api/*",
-      "/_next/*",
-      "/static/*",
-      "*.{css,scss,sass}",
-      "*.{png,jpg,jpeg,gif,bmp,svg,ico}",
-      "*.{js,jsx}",
-      "*.{woff,woff2,eot,ttf,otf}"
-    ]
-  },
+{  
   "platform": {
     "apiRuntime": "node:18"
   },
@@ -20,8 +8,10 @@
       "allowedRoles": ["anonymous"]
     }
   ],
-  "globalHeaders": {
-    "cache-control": "public, max-age=3600, must-revalidate"
+  "resposeOverrides": {
+    "404": {
+        "rewrite": "/404"
+    }
   },
   "mimeTypes": {
     ".json": "application/json"
