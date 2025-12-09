@@ -1,8 +1,24 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Icon from "./Icon";
 import Link from "next/link";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => {
+        if (!r.ok) throw new Error("Not authenticated");
+        return r.json();
+      })
+      .then((data) => {
+        setIsAdmin(data.isAdmin || false);
+      })
+      .catch(() => {
+        setIsAdmin(false);
+      });
+  }, []);
+
   return (
     <div className="app">
       <header className="topbar">
@@ -32,14 +48,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Icon name="discover" />
           <span>Discover</span>
         </Link>
-        <Link className="nav-btn" href="/profile/settings">
+        <Link className="nav-btn" href="/profile">
           <Icon name="user" />
           <span>Profile</span>
         </Link>
-        <Link className="nav-btn" href="/admin/requests">
-          <Icon name="settings" />
-          <span>Admin</span>
-        </Link>
+        {isAdmin && (
+          <Link className="nav-btn" href="/admin/requests">
+            <Icon name="settings" />
+            <span>Admin</span>
+          </Link>
+        )}
       </nav>
     </div>
   );

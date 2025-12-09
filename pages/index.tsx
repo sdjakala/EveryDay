@@ -17,7 +17,11 @@ async function fetchModules() {
 
 export default function Dashboard() {
   const [modules, setModules] = useState<ModuleMeta[]>([]);
-  const [user] = useState<User>({ id: "1", name: "Demo User", rank: 1 });
+  const [user, setUser] = useState<User>({
+    id: "1",
+    name: "Demo User",
+    rank: 1,
+  });
   const [pinned, setPinned] = useState<string | null>(null);
   // Drag/touch reordering disabled due to mobile scrolling issues.
   // The related state is left commented for easy re-enable later.
@@ -27,6 +31,26 @@ export default function Dashboard() {
   // const [touchCandidate, setTouchCandidate] = useState<string | null>(null);
 
   useEffect(() => {
+    // Fetch logged-in user info
+    fetch("/api/auth/me")
+      .then((r) => {
+        if (r.ok) return r.json();
+        throw new Error("Not authenticated");
+      })
+      .then((data) => {
+        if (data.payload) {
+          setUser({
+            id: data.payload.sub || "1",
+            name: data.payload.name || data.payload.email || "User",
+            rank: 1, // You can add rank to the JWT payload if needed
+          });
+        }
+      })
+      .catch((e) => {
+        console.warn("Could not fetch user info:", e);
+        // Keep default demo user on error
+      });
+
     // fetch modules then apply saved order (if any)
     fetchModules()
       .then((data: ModuleMeta[]) => {

@@ -13,7 +13,16 @@ export default function handler(req, res) {
       return;
     }
     const payload = jwt.verify(token, process.env.SESSION_SECRET || "");
-    res.status(200).json({ ok: true, payload });
+    const email = (payload && payload.email) || "";
+
+    // Check if user is admin
+    const admins = (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const isAdmin = admins.includes(String(email).toLowerCase());
+
+    res.status(200).json({ ok: true, payload, isAdmin });
   } catch (e) {
     res.status(401).json({ error: "Invalid session" });
   }

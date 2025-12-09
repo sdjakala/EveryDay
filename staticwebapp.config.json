@@ -1,0 +1,29 @@
+{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": [
+      "/api/*",
+      "/_next/*",
+      "/static/*",
+      "*.{css,scss,sass}",
+      "*.{png,jpg,jpeg,gif,bmp,svg,ico}",
+      "*.{js,jsx}",
+      "*.{woff,woff2,eot,ttf,otf}"
+    ]
+  },
+  "platform": {
+    "apiRuntime": "node:18"
+  },
+  "routes": [
+    {
+      "route": "/api/*",
+      "allowedRoles": ["anonymous"]
+    }
+  ],
+  "globalHeaders": {
+    "cache-control": "public, max-age=3600, must-revalidate"
+  },
+  "mimeTypes": {
+    ".json": "application/json"
+  }
+}

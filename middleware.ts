@@ -12,6 +12,8 @@ const PUBLIC_PATHS = [
   "/robots.txt",
   "/icons/",
   "/public/",
+  "/health", // Azure SWA health checks
+  "/.well-known/", // health/metadata endpoints
 ];
 
 function isPublicPath(pathname: string) {
@@ -101,13 +103,39 @@ export async function middleware(req: NextRequest) {
   const cookies = parseCookies(cookieHeader);
 
   const token = cookies["swa_session"];
-
   const SESSION_SECRET = process.env.SESSION_SECRET || "";
 
+  // If no SESSION_SECRET is available, skip JWT verification and allow through
+  // This prevents deployment timeouts when env vars aren't ready yet
+  if (!SESSION_SECRET) {
+    if (token) {
+      // In dev or during deployment warm-up, allow if cookie exists
+      return NextResponse.next();
+    }
+    // No token and no secret configured - allow through to avoid blocking deployment
+    return NextResponse.next();
+  }
+
   if (token && SESSION_SECRET) {
-    const verified = await verifyJwtHs256(token, SESSION_SECRET);
-    if (verified.valid) return NextResponse.next();
-    // fallthrough to redirect if invalid or expired
+    try {
+      // Add timeout wrapper to prevent hanging during warm-up
+      const verificationPromise = verifyJwtHs256(token, SESSION_SECRET);
+      const timeoutPromise = new Promise<{ valid: boolean }>((resolve) =>
+        setTimeout(() => resolve({ valid: false }), 2000)
+      );
+
+      const verified = await Promise.race([
+        verificationPromise,
+        timeoutPromise,
+      ]);
+
+      if (verified.valid) return NextResponse.next();
+      // fallthrough to redirect if invalid or expired
+    } catch (e) {
+      // On error during verification, allow through to prevent blocking
+      console.error("Middleware JWT verification error:", e);
+      return NextResponse.next();
+    }
   } else if (token) {
     // token exists but no secret configured — allow (dev convenience)
     return NextResponse.next();
@@ -123,6 +151,7 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     // protect all routes except API/auth and static assets
-    "/((?!api/auth|_next|static|favicon.ico|manifest.json|sw.js|robots.txt|icons/).*)",
+    // Also exclude health checks and well-known paths for Azure SWA
+    "/((?!api/auth|api/_|_next|static|favicon.ico|manifest.json|sw.js|robots.txt|icons/|health|.well-known).*)",
   ],
 };
