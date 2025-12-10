@@ -191,7 +191,7 @@ export default function Dashboard() {
     <div className="container">
       <h1>Dashboard</h1>
       <p>
-        Welcome, {user.name} — rank {user.rank}
+        Welcome, {user.name}
       </p>
 
       {pinned

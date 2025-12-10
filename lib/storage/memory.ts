@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import fs from "fs";
 import path from "path";
 
@@ -76,13 +77,15 @@ function persist() {
 
 const memoryAdapter = {
   // Recipes
-  async listRecipes() {
+  async listRecipes(_userId?: string) {
+    // Memory adapter doesn't filter by user (shared storage for anonymous users)
     return recipes;
   },
-  async getRecipe(id: string) {
+  async getRecipe(id: string, _userId?: string) {
+    // Memory adapter doesn't filter by user
     return recipes.find((r) => r.id === id) || null;
   },
-  async createRecipe(payload: Partial<Recipe>) {
+  async createRecipe(payload: Partial<Recipe>, _userId?: string) {
     const now = new Date().toISOString();
     // Preserve client-provided id when present so client and server stay in sync
     const rec: Recipe = {
@@ -99,7 +102,8 @@ const memoryAdapter = {
     persist();
     return rec;
   },
-  async updateRecipe(id: string, payload: Partial<Recipe>) {
+  async updateRecipe(id: string, payload: Partial<Recipe>, _userId?: string) {
+    // Memory adapter doesn't filter by user
     const now = new Date().toISOString();
     recipes = recipes.map((r) =>
       r.id === id ? { ...r, ...payload, updatedAt: now } : r
@@ -107,14 +111,15 @@ const memoryAdapter = {
     persist();
     return recipes.find((r) => r.id === id) || null;
   },
-  async deleteRecipe(id: string) {
+  async deleteRecipe(id: string, _userId?: string) {
+    // Memory adapter doesn't filter by user
     const prev = recipes.length;
     recipes = recipes.filter((r) => r.id !== id);
     persist();
     return prev !== recipes.length;
   },
   // push ingredients into grocery lists (by section)
-  async pushIngredientsToGrocery(recipeId: string) {
+  async pushIngredientsToGrocery(recipeId: string, _userId?: string) {
     const rec = recipes.find((r) => r.id === recipeId);
     if (!rec) throw new Error("not found");
     if (!rec.ingredients || !rec.ingredients.length) return 0;
@@ -133,10 +138,11 @@ const memoryAdapter = {
   },
 
   // Grocery
-  async getGroceryLists() {
+  async getGroceryLists(_userId?: string) {
+    // Memory adapter doesn't filter by user
     return grocery;
   },
-  async addGroceryItem(section: string, title: string) {
+  async addGroceryItem(section: string, title: string, _userId?: string) {
     const it: Item = {
       id: uid(),
       title,
@@ -148,7 +154,13 @@ const memoryAdapter = {
     persist();
     return it;
   },
-  async updateGroceryItem(section: string, id: string, patch: Partial<Item>) {
+  async updateGroceryItem(
+    section: string,
+    id: string,
+    patch: Partial<Item>,
+    _userId?: string
+  ) {
+    // Memory adapter doesn't filter by user
     if (!grocery[section]) return null;
     grocery[section] = grocery[section].map((it) =>
       it.id === id
@@ -158,7 +170,7 @@ const memoryAdapter = {
     persist();
     return grocery[section].find((it) => it.id === id) || null;
   },
-  async deleteGroceryItem(section: string, id: string) {
+  async deleteGroceryItem(section: string, id: string, _userId?: string) {
     if (!grocery[section]) return false;
     const before = grocery[section].length;
     grocery[section] = grocery[section].filter((it) => it.id !== id);

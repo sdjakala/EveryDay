@@ -10,6 +10,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
   },
   "dependencies": {
+    "@azure/cosmos": "^4.9.0",
     "cookie": "^0.5.0",
     "google-auth-library": "^8.7.0",
     "isomorphic-unfetch": "^3.1.0",
