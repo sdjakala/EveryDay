@@ -49,6 +49,7 @@ jobs:
             --name "${{ secrets.SWA_NAME }}" \
             --resource-group "${{ secrets.SWA_RESOURCE_GROUP }}" \
             --setting-names \
+              BASE_URL="${{ secrets.BASE_URL }}" \
               GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
               GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
               SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
