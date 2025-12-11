@@ -98,6 +98,11 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   } 
 
+  // aways allow auth endpoints
+  if(pathname.startsWith("/api/auth")) {
+    return NextResponse.next();
+  }
+
   // allow public files and auth endpoints
   if (isPublicPath(pathname)) return NextResponse.next();
 
