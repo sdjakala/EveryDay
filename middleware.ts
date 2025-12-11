@@ -21,7 +21,7 @@ function isPublicPath(pathname: string) {
     if (p.endsWith("/")) {
       if (pathname.startsWith(p)) return true;
     } else {
-      if (pathname === p || pathname.startsWith(p)) return true;
+      if (pathname === p || pathname.startsWith(p + "/")) return true;
     }
   }
   return false;
@@ -94,7 +94,10 @@ export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
   const ENABLE_MIDDLEWARE = process.env.ENABLE_AUTH_MIDDLEWARE === "true";
-  if (!ENABLE_MIDDLEWARE) {
+
+  const isAzureSWA = process.env.BASE_URL?.includes("azurestaticapps.net");
+
+  if (!ENABLE_MIDDLEWARE || isAzureSWA) {
     return NextResponse.next();
   } 
 
