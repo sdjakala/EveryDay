@@ -20,7 +20,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
       - name: Install dependencies
         run: npm ci
       - name: Lint
@@ -53,8 +53,15 @@ jobs:
               GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
               GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
               SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
-              ADMIN_SECRET="${{ secrets.ADMIN_SECRET }}"
-              ENABLE_AUTH_MIDDLEWARE="true"
+              ADMIN_SECRET="${{ secrets.ADMIN_SECRET }}" \
+              ADMIN_EMAILS="${{ secrets.ADMIN_EMAILS }}" \
+              ENABLE_AUTH_MIDDLEWARE="true" \
+              STORAGE_ADAPTER="${{ secrets.STORAGE_ADAPTER }}" \
+              COSMOS_ENDPOINT="${{ secrets.COSMOS_ENDPOINT }}" \
+              COSMOS_KEY="${{ secrets.COSMOS_KEY }}" \
+              COSMOS_DATABASE="${{ secrets.COSMOS_DATABASE }}" \
+              COSMOS_CONTAINER_RECIPES="${{ secrets.COSMOS_CONTAINER_RECIPES }}" \
+              COSMOS_CONTAINER_GROCERY="${{ secrets.COSMOS_CONTAINER_GROCERY }}"
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:

@@ -1,0 +1,162 @@
+import { NextApiRequest, NextApiResponse } from "next";
+import cookie from "cookie";
+import jwt from "jsonwebtoken";
+import cosmos from "../../../lib/storage/cosmos";
+
+const SESSION_SECRET = process.env.SESSION_SECRET || "";
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+
+// Helper to get user email from session
+function getUserFromRequest(req: NextApiRequest): string | null {
+  try {
+    const raw = req.headers.cookie || "";
+    const parsed = cookie.parse(raw);
+    const token = parsed["swa_session"];
+    if (!token) return null;
+
+    const payload = jwt.verify(token, SESSION_SECRET) as any;
+    return payload.email || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Refresh access token using refresh token
+async function refreshAccessToken(refreshToken: string): Promise<{
+  access_token: string;
+  expires_in: number;
+} | null> {
+  try {
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }).toString(),
+    });
+
+    if (!response.ok) {
+      console.error("Token refresh failed:", await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    return {
+      access_token: data.access_token,
+      expires_in: data.expires_in,
+    };
+  } catch (e) {
+    console.error("Token refresh error:", e);
+    return null;
+  }
+}
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    // Get user email from session
+    const userEmail = getUserFromRequest(req);
+    if (!userEmail) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Get stored OAuth tokens
+    const tokens = await cosmos.getUserTokens(userEmail);
+    if (!tokens || !tokens.accessToken) {
+      return res.status(404).json({
+        error: "No Google Calendar access",
+        message: "Please sign out and sign in again to grant calendar access",
+      });
+    }
+
+    let accessToken = tokens.accessToken;
+
+    // Check if token is expired and refresh if needed
+    if (tokens.expiresAt && Date.now() >= tokens.expiresAt) {
+      if (!tokens.refreshToken) {
+        return res.status(401).json({
+          error: "Token expired",
+          message: "Please sign out and sign in again",
+        });
+      }
+
+      const refreshed = await refreshAccessToken(tokens.refreshToken);
+      if (!refreshed) {
+        return res.status(401).json({
+          error: "Token refresh failed",
+          message: "Please sign out and sign in again",
+        });
+      }
+
+      accessToken = refreshed.access_token;
+      // Save the new access token
+      await cosmos.saveUserTokens(
+        userEmail,
+        refreshed.access_token,
+        tokens.refreshToken,
+        refreshed.expires_in
+      );
+    }
+
+    // Get query parameters for date range
+    const { timeMin, timeMax, maxResults = "50" } = req.query;
+
+    // Fetch calendar events from Google Calendar API
+    const params = new URLSearchParams({
+      maxResults: maxResults as string,
+      singleEvents: "true",
+      orderBy: "startTime",
+    });
+
+    if (timeMin) params.append("timeMin", timeMin as string);
+    if (timeMax) params.append("timeMax", timeMax as string);
+
+    const calendarResponse = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!calendarResponse.ok) {
+      const errorText = await calendarResponse.text();
+      console.error("Calendar API error:", errorText);
+      return res.status(calendarResponse.status).json({
+        error: "Failed to fetch calendar events",
+        details: errorText,
+      });
+    }
+
+    const calendarData = await calendarResponse.json();
+
+    // Transform Google Calendar events to our format
+    const events = (calendarData.items || []).map((event: any) => ({
+      id: event.id,
+      title: event.summary || "(No title)",
+      start: event.start?.dateTime || event.start?.date,
+      end: event.end?.dateTime || event.end?.date,
+      location: event.location,
+      description: event.description,
+      htmlLink: event.htmlLink,
+    }));
+
+    return res.status(200).json({ events });
+  } catch (e: any) {
+    console.error("Calendar sync error:", e);
+    return res.status(500).json({
+      error: e?.message || "Internal server error",
+    });
+  }
+}

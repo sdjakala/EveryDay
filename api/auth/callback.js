@@ -89,7 +89,7 @@ export default async function handler(req, res) {
       return;
     }
     const tokenJson = await tokenResp.json();
-    const { id_token } = tokenJson;
+    const { id_token, access_token, refresh_token, expires_in } = tokenJson;
     if (!id_token) {
       res.status(500).send("No id_token returned");
       return;
@@ -110,6 +110,24 @@ export default async function handler(req, res) {
       res.writeHead(302, { Location: "/access-requested" });
       res.end();
       return;
+    }
+
+    // Store OAuth tokens in Cosmos DB for API access (calendar, etc.)
+    if (access_token && process.env.STORAGE_ADAPTER === "cosmos") {
+      try {
+        // Dynamic import - path relative to project root when built
+        const cosmosModule = await import("../../lib/storage/cosmos");
+        const cosmos = cosmosModule.default || cosmosModule;
+        await cosmos.saveUserTokens(
+          email,
+          access_token,
+          refresh_token,
+          expires_in
+        );
+      } catch (e) {
+        console.error("Failed to store OAuth tokens:", e);
+        // Continue anyway - user can still authenticate without API access
+      }
     }
 
     // Create session token (signed JWT)

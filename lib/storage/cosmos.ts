@@ -36,12 +36,45 @@ type GrocerySection = {
   userId?: string; // Owner of the grocery list
   sharedWith?: string[]; // Array of userIds this list is shared with
 };
+type Task = {
+  id: string;
+  title: string;
+  completed?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  userId?: string; // Owner of the task
+  sharedWith?: string[]; // Array of userIds this task is shared with
+};
+type UserTokens = {
+  id: string; // userId (email)
+  userId: string; // userId (email) - for partition key
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number; // timestamp when access token expires
+  createdAt?: string;
+  updatedAt?: string;
+};
+type CalendarEvent = {
+  id: string;
+  title: string;
+  start: string; // ISO datetime
+  end?: string; // ISO datetime
+  location?: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  userId?: string; // Owner of the event
+  sharedWith?: string[]; // Array of userIds this event is shared with
+};
 
 const endpoint = process.env.COSMOS_ENDPOINT || "";
 const key = process.env.COSMOS_KEY || "";
 const databaseId = process.env.COSMOS_DATABASE || "EveryDay";
 const recipesContainerId = process.env.COSMOS_CONTAINER_RECIPES || "Recipes";
 const groceryContainerId = process.env.COSMOS_CONTAINER_GROCERY || "Grocery";
+const tasksContainerId = process.env.COSMOS_CONTAINER_TASKS || "Tasks";
+const tokensContainerId = process.env.COSMOS_CONTAINER_TOKENS || "Tokens";
+const calendarContainerId = process.env.COSMOS_CONTAINER_CALENDAR || "Calendar";
 
 let client: CosmosClient | null = null;
 
@@ -409,6 +442,328 @@ const cosmosAdapter = {
       if (before === sectionDoc.items.length) return false;
 
       await container.item(section, section).replace(sectionDoc);
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  // Tasks
+  async getTasks(userId?: string): Promise<Task[]> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tasksContainerId);
+
+    if (!userId) {
+      // No userId means fetch all (for admin or unauthenticated)
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.createdAt DESC")
+        .fetchAll();
+      return resources as Task[];
+    }
+
+    // Fetch tasks owned by or shared with the user
+    const query = {
+      query: `SELECT * FROM c WHERE ${buildAccessFilter(userId)} ORDER BY c.createdAt DESC`,
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as Task[];
+  },
+
+  async getTask(id: string, userId?: string): Promise<Task | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tasksContainerId);
+    try {
+      const { resource } = await container.item(id, id).read<Task>();
+      if (!resource) return null;
+
+      // Check access: if userId provided, verify user owns it or it's shared with them
+      if (
+        userId &&
+        resource.userId !== userId &&
+        !resource.sharedWith?.includes(userId)
+      ) {
+        return null; // User doesn't have access
+      }
+
+      return resource;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async createTask(payload: Partial<Task>, userId?: string): Promise<Task> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tasksContainerId);
+
+    const newTask: Task = {
+      id: uid(),
+      title: payload.title || "Untitled Task",
+      completed: payload.completed || false,
+      createdAt: new Date().toISOString(),
+      userId: userId, // Set owner
+      sharedWith: [], // Initialize empty shared list
+    };
+
+    const { resource } = await container.items.create(newTask);
+    return resource as Task;
+  },
+
+  async updateTask(
+    id: string,
+    payload: Partial<Task>,
+    userId?: string
+  ): Promise<Task | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tasksContainerId);
+
+    try {
+      const { resource: existing } = await container.item(id, id).read<Task>();
+      if (!existing) return null;
+
+      // Check access
+      if (
+        userId &&
+        existing.userId !== userId &&
+        !existing.sharedWith?.includes(userId)
+      ) {
+        return null; // User doesn't have access
+      }
+
+      const updated: Task = {
+        ...existing,
+        ...payload,
+        id: existing.id, // Preserve id
+        userId: existing.userId, // Preserve owner
+        updatedAt: new Date().toISOString(),
+      };
+
+      const { resource } = await container.item(id, id).replace(updated);
+      return resource as Task;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async deleteTask(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tasksContainerId);
+
+    try {
+      const { resource: existing } = await container.item(id, id).read<Task>();
+      if (!existing) return false;
+
+      // Check access
+      if (
+        userId &&
+        existing.userId !== userId &&
+        !existing.sharedWith?.includes(userId)
+      ) {
+        return false; // User doesn't have access
+      }
+
+      await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  // User Tokens (OAuth)
+  async saveUserTokens(
+    userId: string,
+    accessToken: string,
+    refreshToken?: string,
+    expiresIn?: number
+  ): Promise<void> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tokensContainerId);
+
+    const expiresAt = expiresIn ? Date.now() + expiresIn * 1000 : undefined;
+    const tokens: UserTokens = {
+      id: userId,
+      userId,
+      accessToken,
+      refreshToken,
+      expiresAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await container.items.upsert(tokens);
+  },
+
+  async getUserTokens(userId: string): Promise<UserTokens | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tokensContainerId);
+
+    try {
+      const { resource } = await container
+        .item(userId, userId)
+        .read<UserTokens>();
+      return resource || null;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async deleteUserTokens(userId: string): Promise<boolean> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tokensContainerId);
+
+    try {
+      await container.item(userId, userId).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  // Calendar Events (custom user events)
+  async getCalendarEvents(userId?: string): Promise<CalendarEvent[]> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(calendarContainerId);
+
+    if (!userId) {
+      // No userId means fetch all (for admin or unauthenticated)
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.start ASC")
+        .fetchAll();
+      return resources as CalendarEvent[];
+    }
+
+    // Fetch events owned by or shared with the user
+    const query = {
+      query: `SELECT * FROM c WHERE ${buildAccessFilter(userId)} ORDER BY c.start ASC`,
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as CalendarEvent[];
+  },
+
+  async getCalendarEvent(
+    id: string,
+    userId?: string
+  ): Promise<CalendarEvent | null> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(calendarContainerId);
+    try {
+      const { resource } = await container.item(id, id).read<CalendarEvent>();
+      if (!resource) return null;
+
+      // Check access: if userId provided, verify user owns it or it's shared with them
+      if (
+        userId &&
+        resource.userId !== userId &&
+        !resource.sharedWith?.includes(userId)
+      ) {
+        return null; // User doesn't have access
+      }
+
+      return resource;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async createCalendarEvent(
+    payload: Partial<CalendarEvent>,
+    userId?: string
+  ): Promise<CalendarEvent> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(calendarContainerId);
+
+    const newEvent: CalendarEvent = {
+      id: uid(),
+      title: payload.title || "Untitled Event",
+      start: payload.start || new Date().toISOString(),
+      end: payload.end,
+      location: payload.location,
+      description: payload.description,
+      createdAt: new Date().toISOString(),
+      userId: userId, // Set owner
+      sharedWith: [], // Initialize empty shared list
+    };
+
+    const { resource } = await container.items.create(newEvent);
+    return resource as CalendarEvent;
+  },
+
+  async updateCalendarEvent(
+    id: string,
+    payload: Partial<CalendarEvent>,
+    userId?: string
+  ): Promise<CalendarEvent | null> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(calendarContainerId);
+
+    try {
+      const { resource: existing } = await container
+        .item(id, id)
+        .read<CalendarEvent>();
+      if (!existing) return null;
+
+      // Check access
+      if (
+        userId &&
+        existing.userId !== userId &&
+        !existing.sharedWith?.includes(userId)
+      ) {
+        return null; // User doesn't have access
+      }
+
+      const updated: CalendarEvent = {
+        ...existing,
+        ...payload,
+        id: existing.id, // Preserve id
+        userId: existing.userId, // Preserve owner
+        updatedAt: new Date().toISOString(),
+      };
+
+      const { resource } = await container.item(id, id).replace(updated);
+      return resource as CalendarEvent;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async deleteCalendarEvent(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(calendarContainerId);
+
+    try {
+      const { resource: existing } = await container
+        .item(id, id)
+        .read<CalendarEvent>();
+      if (!existing) return false;
+
+      // Check access
+      if (
+        userId &&
+        existing.userId !== userId &&
+        !existing.sharedWith?.includes(userId)
+      ) {
+        return false; // User doesn't have access
+      }
+
+      await container.item(id, id).delete();
       return true;
     } catch (e: any) {
       if (e.code === 404) return false;

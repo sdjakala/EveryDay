@@ -20,10 +20,29 @@ type Item = {
   createdAt?: string;
   updatedAt?: string;
 };
+type Task = {
+  id: string;
+  title: string;
+  completed?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+type CalendarEvent = {
+  id: string;
+  title: string;
+  start: string;
+  end?: string;
+  location?: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const RECIPES_FILE = path.join(DATA_DIR, "backend_recipes.json");
 const GROCERY_FILE = path.join(DATA_DIR, "backend_grocery.json");
+const TASKS_FILE = path.join(DATA_DIR, "backend_tasks.json");
+const CALENDAR_FILE = path.join(DATA_DIR, "backend_calendar.json");
 
 function ensureDataDir() {
   try {
@@ -68,11 +87,18 @@ let grocery: Record<string, Item[]> = readJson<Record<string, Item[]>>(
   GROCERY_FILE,
   {}
 );
+let tasks: Task[] = readJson<Task[]>(TASKS_FILE, []);
+let calendarEvents: CalendarEvent[] = readJson<CalendarEvent[]>(
+  CALENDAR_FILE,
+  []
+);
 
 function persist() {
   if (!SHOULD_PERSIST) return;
   writeJson(RECIPES_FILE, recipes);
   writeJson(GROCERY_FILE, grocery);
+  writeJson(TASKS_FILE, tasks);
+  writeJson(CALENDAR_FILE, calendarEvents);
 }
 
 const memoryAdapter = {
@@ -176,6 +202,91 @@ const memoryAdapter = {
     grocery[section] = grocery[section].filter((it) => it.id !== id);
     persist();
     return before !== grocery[section].length;
+  },
+
+  // Tasks
+  async getTasks(_userId?: string) {
+    // Memory adapter doesn't filter by user (shared storage for anonymous users)
+    return tasks;
+  },
+  async getTask(id: string, _userId?: string) {
+    // Memory adapter doesn't filter by user
+    return tasks.find((t) => t.id === id) || null;
+  },
+  async createTask(payload: Partial<Task>, _userId?: string) {
+    const now = new Date().toISOString();
+    const task: Task = {
+      id: uid(),
+      title: payload.title || "Untitled Task",
+      completed: payload.completed || false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    tasks = [task, ...tasks];
+    persist();
+    return task;
+  },
+  async updateTask(id: string, payload: Partial<Task>, _userId?: string) {
+    // Memory adapter doesn't filter by user
+    const now = new Date().toISOString();
+    tasks = tasks.map((t) =>
+      t.id === id ? { ...t, ...payload, updatedAt: now } : t
+    );
+    persist();
+    return tasks.find((t) => t.id === id) || null;
+  },
+  async deleteTask(id: string, _userId?: string) {
+    // Memory adapter doesn't filter by user
+    const prev = tasks.length;
+    tasks = tasks.filter((t) => t.id !== id);
+    persist();
+    return prev !== tasks.length;
+  },
+
+  // Calendar Events
+  async getCalendarEvents(_userId?: string) {
+    // Memory adapter doesn't filter by user (shared storage for anonymous users)
+    return calendarEvents;
+  },
+  async getCalendarEvent(id: string, _userId?: string) {
+    // Memory adapter doesn't filter by user
+    return calendarEvents.find((e) => e.id === id) || null;
+  },
+  async createCalendarEvent(payload: Partial<CalendarEvent>, _userId?: string) {
+    const now = new Date().toISOString();
+    const event: CalendarEvent = {
+      id: uid(),
+      title: payload.title || "Untitled Event",
+      start: payload.start || now,
+      end: payload.end,
+      location: payload.location,
+      description: payload.description,
+      createdAt: now,
+      updatedAt: now,
+    };
+    calendarEvents = [event, ...calendarEvents];
+    persist();
+    return event;
+  },
+  async updateCalendarEvent(
+    id: string,
+    payload: Partial<CalendarEvent>,
+    _userId?: string
+  ) {
+    // Memory adapter doesn't filter by user
+    const now = new Date().toISOString();
+    calendarEvents = calendarEvents.map((e) =>
+      e.id === id ? { ...e, ...payload, updatedAt: now } : e
+    );
+    persist();
+    return calendarEvents.find((e) => e.id === id) || null;
+  },
+  async deleteCalendarEvent(id: string, _userId?: string) {
+    // Memory adapter doesn't filter by user
+    const prev = calendarEvents.length;
+    calendarEvents = calendarEvents.filter((e) => e.id !== id);
+    persist();
+    return prev !== calendarEvents.length;
   },
 };
 

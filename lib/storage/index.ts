@@ -70,6 +70,20 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
       adapter.updateGroceryItem(section, id, patch, userId),
     deleteGroceryItem: (section: string, id: string) =>
       adapter.deleteGroceryItem(section, id, userId),
+    getTasks: () => adapter.getTasks(userId),
+    getTask: (id: string) => adapter.getTask(id, userId),
+    createTask: (payload: any) => adapter.createTask(payload, userId),
+    updateTask: (id: string, payload: any) =>
+      adapter.updateTask(id, payload, userId),
+    deleteTask: (id: string) => adapter.deleteTask(id, userId),
+    getCalendarEvents: () => adapter.getCalendarEvents(userId),
+    getCalendarEvent: (id: string) => adapter.getCalendarEvent(id, userId),
+    createCalendarEvent: (payload: any) =>
+      adapter.createCalendarEvent(payload, userId),
+    updateCalendarEvent: (id: string, payload: any) =>
+      adapter.updateCalendarEvent(id, payload, userId),
+    deleteCalendarEvent: (id: string) =>
+      adapter.deleteCalendarEvent(id, userId),
   };
 }
 
