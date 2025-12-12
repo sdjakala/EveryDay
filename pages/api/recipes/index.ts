@@ -10,7 +10,7 @@ export default async function handler(
 
     if (req.method === "GET") {
       const list = await storage.listRecipes();
-      res.status(200).json({ items: list });
+      res.status(200).json({ recipes: list });
       return;
     }
 
