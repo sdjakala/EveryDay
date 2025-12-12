@@ -37,12 +37,31 @@ type CalendarEvent = {
   createdAt?: string;
   updatedAt?: string;
 };
+type NewsFeedSource = {
+  id: string;
+  name: string;
+  url: string;
+  active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+type NewsArticleCache = {
+  id: string;
+  sourceId: string;
+  title: string;
+  url: string;
+  source: string;
+  published?: string;
+  cachedAt: string;
+};
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const RECIPES_FILE = path.join(DATA_DIR, "backend_recipes.json");
 const GROCERY_FILE = path.join(DATA_DIR, "backend_grocery.json");
 const TASKS_FILE = path.join(DATA_DIR, "backend_tasks.json");
 const CALENDAR_FILE = path.join(DATA_DIR, "backend_calendar.json");
+const NEWS_SOURCES_FILE = path.join(DATA_DIR, "backend_news_sources.json");
+const NEWS_CACHE_FILE = path.join(DATA_DIR, "backend_news_cache.json");
 
 function ensureDataDir() {
   try {
@@ -92,6 +111,14 @@ let calendarEvents: CalendarEvent[] = readJson<CalendarEvent[]>(
   CALENDAR_FILE,
   []
 );
+let newsSources: NewsFeedSource[] = readJson<NewsFeedSource[]>(
+  NEWS_SOURCES_FILE,
+  []
+);
+let newsArticlesCache: NewsArticleCache[] = readJson<NewsArticleCache[]>(
+  NEWS_CACHE_FILE,
+  []
+);
 
 function persist() {
   if (!SHOULD_PERSIST) return;
@@ -99,6 +126,8 @@ function persist() {
   writeJson(GROCERY_FILE, grocery);
   writeJson(TASKS_FILE, tasks);
   writeJson(CALENDAR_FILE, calendarEvents);
+  writeJson(NEWS_SOURCES_FILE, newsSources);
+  writeJson(NEWS_CACHE_FILE, newsArticlesCache);
 }
 
 const memoryAdapter = {
@@ -287,6 +316,112 @@ const memoryAdapter = {
     calendarEvents = calendarEvents.filter((e) => e.id !== id);
     persist();
     return prev !== calendarEvents.length;
+  },
+
+  // News Sources
+  async getNewsSources(_userId?: string) {
+    // Memory adapter doesn't filter by user
+    return newsSources;
+  },
+  async getNewsSource(id: string, _userId?: string) {
+    // Memory adapter doesn't filter by user
+    return newsSources.find((s) => s.id === id) || null;
+  },
+  async createNewsSource(
+    payload: Omit<NewsFeedSource, "id" | "createdAt" | "updatedAt">,
+    _userId?: string
+  ) {
+    const now = new Date().toISOString();
+    const source: NewsFeedSource = {
+      id: uid(),
+      name: payload.name,
+      url: payload.url,
+      active: payload.active !== false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    newsSources = [source, ...newsSources];
+    persist();
+    return source;
+  },
+  async updateNewsSource(
+    id: string,
+    payload: Partial<NewsFeedSource>,
+    _userId?: string
+  ) {
+    // Memory adapter doesn't filter by user
+    const now = new Date().toISOString();
+    newsSources = newsSources.map((s) =>
+      s.id === id ? { ...s, ...payload, updatedAt: now } : s
+    );
+    persist();
+    return newsSources.find((s) => s.id === id) || null;
+  },
+  async deleteNewsSource(id: string, _userId?: string) {
+    // Memory adapter doesn't filter by user
+    const prev = newsSources.length;
+    newsSources = newsSources.filter((s) => s.id !== id);
+    persist();
+    return prev !== newsSources.length;
+  },
+
+  // News Article Cache
+  async getCachedArticles(
+    sourceId?: string,
+    maxAgeMinutes: number = 60
+  ): Promise<NewsArticleCache[]> {
+    const cutoffTime = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+
+    let filtered = newsArticlesCache.filter(
+      (a) => new Date(a.cachedAt) > cutoffTime
+    );
+
+    if (sourceId) {
+      filtered = filtered.filter((a) => a.sourceId === sourceId);
+    }
+
+    return filtered;
+  },
+
+  async cacheArticles(
+    articles: Omit<NewsArticleCache, "id" | "cachedAt">[],
+    _ttlSeconds?: number
+  ): Promise<void> {
+    const cachedAt = new Date().toISOString();
+
+    const newArticles = articles.map((article) => ({
+      ...article,
+      id: `${article.sourceId}-${Buffer.from(article.url).toString("base64url")}`,
+      cachedAt,
+    }));
+
+    // Remove duplicates by URL
+    const existingUrls = new Set(newsArticlesCache.map((a) => a.url));
+    const toAdd = newArticles.filter((a) => !existingUrls.has(a.url));
+
+    newsArticlesCache = [...toAdd, ...newsArticlesCache];
+
+    // Keep only last 500 articles to avoid memory bloat
+    if (newsArticlesCache.length > 500) {
+      newsArticlesCache = newsArticlesCache.slice(0, 500);
+    }
+
+    persist();
+  },
+
+  async clearArticleCache(sourceId?: string): Promise<number> {
+    const prev = newsArticlesCache.length;
+
+    if (sourceId) {
+      newsArticlesCache = newsArticlesCache.filter(
+        (a) => a.sourceId !== sourceId
+      );
+    } else {
+      newsArticlesCache = [];
+    }
+
+    persist();
+    return prev - newsArticlesCache.length;
   },
 };
 

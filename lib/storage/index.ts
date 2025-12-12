@@ -84,6 +84,19 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
       adapter.updateCalendarEvent(id, payload, userId),
     deleteCalendarEvent: (id: string) =>
       adapter.deleteCalendarEvent(id, userId),
+    getNewsSources: () => adapter.getNewsSources(userId),
+    getNewsSource: (id: string) => adapter.getNewsSource(id, userId),
+    createNewsSource: (payload: any) =>
+      adapter.createNewsSource(payload, userId),
+    updateNewsSource: (id: string, payload: any) =>
+      adapter.updateNewsSource(id, payload, userId),
+    deleteNewsSource: (id: string) => adapter.deleteNewsSource(id, userId),
+    getCachedArticles: (sourceId?: string, maxAgeMinutes?: number) =>
+      adapter.getCachedArticles(sourceId, maxAgeMinutes),
+    cacheArticles: (articles: any[], ttlSeconds?: number) =>
+      adapter.cacheArticles(articles, ttlSeconds),
+    clearArticleCache: (sourceId?: string) =>
+      adapter.clearArticleCache(sourceId),
   };
 }
 

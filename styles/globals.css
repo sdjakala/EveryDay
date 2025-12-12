@@ -579,6 +579,8 @@ h1 {
   border-radius: 12px;
   max-width: 520px;
   width: 92%;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.03);
 }
@@ -678,4 +680,22 @@ h1 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
+}
+
+/* Recipe step highlighting */
+.recipe-step {
+  background: transparent;
+  user-select: none;
+}
+.recipe-step:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.recipe-step.highlighted {
+  background: linear-gradient(
+    135deg,
+    rgba(37, 244, 238, 0.08),
+    rgba(132, 86, 255, 0.08)
+  );
+  color: #fff;
+  font-weight: 500;
 }

@@ -12,27 +12,6 @@ type EventItem = {
   source?: "google" | "custom"; // Track event source
 };
 
-const sampleEvents: EventItem[] = [
-  {
-    id: "e1",
-    title: "Team Standup",
-    start: new Date().toISOString().replace(/T.*$/, "T09:00:00"),
-    end: undefined,
-  },
-  {
-    id: "e2",
-    title: "Project Sync",
-    start: new Date().toISOString().replace(/T.*$/, "T11:00:00"),
-    end: undefined,
-  },
-  {
-    id: "e3",
-    title: "Lunch w/ Mentors",
-    start: new Date().toISOString().replace(/T.*$/, "T12:30:00"),
-    end: undefined,
-  },
-];
-
 function startOfWeek(date: Date) {
   const d = new Date(date);
   const day = d.getDay();
@@ -96,24 +75,26 @@ export default function CalendarModule() {
       setLoading(true);
       setSyncError(null);
 
-      // Calculate time range for fetching (current month +/- 1 month)
+      // Calculate time range for fetching (6 months: 3 months back, 3 months ahead)
       const now = new Date();
-      const timeMin = new Date(
-        now.getFullYear(),
-        now.getMonth() - 1,
-        1
-      ).toISOString();
-      const timeMax = new Date(
-        now.getFullYear(),
-        now.getMonth() + 2,
-        0
-      ).toISOString();
+      const timeMinDate = new Date(now);
+      timeMinDate.setMonth(timeMinDate.getMonth() - 3);
+      timeMinDate.setDate(1);
+      timeMinDate.setHours(0, 0, 0, 0);
+
+      const timeMaxDate = new Date(now);
+      timeMaxDate.setMonth(timeMaxDate.getMonth() + 4);
+      timeMaxDate.setDate(0);
+      timeMaxDate.setHours(23, 59, 59, 999);
+
+      const timeMin = timeMinDate.toISOString();
+      const timeMax = timeMaxDate.toISOString();      
 
       // Fetch Google Calendar events
       let googleEvents: EventItem[] = [];
       try {
         const googleRes = await fetch(
-          `/api/calendar/sync?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`
+          `/api/calendar/sync?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&maxResults=500`
         );
 
         if (googleRes.ok) {

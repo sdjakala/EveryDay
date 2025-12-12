@@ -64,7 +64,9 @@ jobs:
               COSMOS_CONTAINER_GROCERY="${{ secrets.COSMOS_CONTAINER_GROCERY }}" \
               COSMOS_CONTAINER_TASKS="${{ secrets.COSMOS_CONTAINER_TASKS }}" \
               COSMOS_CONTAINER_TOKENS="${{ secrets.COSMOS_CONTAINER_TOKENS }}" \
-              COSMOS_CONTAINER_CALENDAR="${{ secrets.COSMOS_CONTAINER_CALENDAR }}"
+              COSMOS_CONTAINER_CALENDAR="${{ secrets.COSMOS_CONTAINER_CALENDAR }}" \
+              COSMOS_CONTAINER_NEWS_SOURCES="${{ secrets.COSMOS_CONTAINER_NEWS_SOURCES }}" \
+              COSMOS_CONTAINER_NEWS_CACHE="${{ secrets.COSMOS_CONTAINER_NEWS_CACHE }}"
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
