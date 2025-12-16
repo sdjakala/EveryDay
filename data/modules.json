@@ -31,4 +31,12 @@
     "enabled": true,
     "minRank": 0
   }
+  ,
+  {
+    "name": "traffic",
+    "description": "Traffic routes and commute planning",
+    "enabled": true,
+    "minRank": 0
+  }
+
 ]
