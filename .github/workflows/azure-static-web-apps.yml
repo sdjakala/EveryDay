@@ -73,6 +73,29 @@ jobs:
               GOOGLE_MAPS_API_KEY="${{ secrets.GOOGLE_MAPS_API_KEY }}"
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+          ENABLE_AUTH_MIDDLEWARE: "true"
+          STORAGE_ADAPTER: ${{ secrets.STORAGE_ADAPTER }}
+          COSMOS_ENDPOINT: ${{ secrets.COSMOS_ENDPOINT }}
+          COSMOS_KEY: ${{ secrets.COSMOS_KEY }}
+          COSMOS_DATABASE: ${{ secrets.COSMOS_DATABASE }}
+          COSMOS_CONTAINER_RECIPES: ${{ secrets.COSMOS_CONTAINER_RECIPES }}
+          COSMOS_CONTAINER_GROCERY: ${{ secrets.COSMOS_CONTAINER_GROCERY }}
+          COSMOS_CONTAINER_TASKS: ${{ secrets.COSMOS_CONTAINER_TASKS }}
+          COSMOS_CONTAINER_TOKENS: ${{ secrets.COSMOS_CONTAINER_TOKENS }}
+          COSMOS_CONTAINER_CALENDAR: ${{ secrets.COSMOS_CONTAINER_CALENDAR }}
+          COSMOS_CONTAINER_NEWS_SOURCES: ${{ secrets.COSMOS_CONTAINER_NEWS_SOURCES }}
+          COSMOS_CONTAINER_NEWS_CACHE: ${{ secrets.COSMOS_CONTAINER_NEWS_CACHE }}
+          COSMOS_CONTAINER_TRAFFIC_LOCATIONS: ${{ secrets.COSMOS_CONTAINER_TRAFFIC_LOCATIONS }}
+          COSMOS_CONTAINER_FAVORITE_ROUTES: ${{ secrets.COSMOS_CONTAINER_FAVORITE_ROUTES }}
+          COSMOS_CONTAINER_TRAFFIC_ALERTS: ${{ secrets.COSMOS_CONTAINER_TRAFFIC_ALERTS }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
