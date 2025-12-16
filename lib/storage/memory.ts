@@ -54,6 +54,38 @@ type NewsArticleCache = {
   published?: string;
   cachedAt: string;
 };
+type TrafficLocation = {
+  id: string;
+  name: string;
+  address: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+type FavoriteRoute = {
+  id: string;
+  name: string;
+  originId: string;
+  originAddress: string;
+  destinationId: string;
+  destinationAddress: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  notifyOnTraffic?: boolean;
+  baselineDuration?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+type TrafficAlert = {
+  id: string;
+  routeId: string;
+  routeName: string;
+  normalDuration: string;
+  currentDuration: string;
+  delay: string;
+  routeSummary: string;
+  timestamp: string;
+  dismissed?: boolean;
+};
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const RECIPES_FILE = path.join(DATA_DIR, "backend_recipes.json");
@@ -62,6 +94,15 @@ const TASKS_FILE = path.join(DATA_DIR, "backend_tasks.json");
 const CALENDAR_FILE = path.join(DATA_DIR, "backend_calendar.json");
 const NEWS_SOURCES_FILE = path.join(DATA_DIR, "backend_news_sources.json");
 const NEWS_CACHE_FILE = path.join(DATA_DIR, "backend_news_cache.json");
+const TRAFFIC_LOCATIONS_FILE = path.join(
+  DATA_DIR,
+  "backend_traffic_locations.json"
+);
+const FAVORITE_ROUTES_FILE = path.join(
+  DATA_DIR,
+  "backend_favorite_routes.json"
+);
+const TRAFFIC_ALERTS_FILE = path.join(DATA_DIR, "backend_traffic_alerts.json");
 
 function ensureDataDir() {
   try {
@@ -422,6 +463,153 @@ const memoryAdapter = {
 
     persist();
     return prev - newsArticlesCache.length;
+  },
+
+  // Traffic Locations
+  async getTrafficLocations(): Promise<TrafficLocation[]> {
+    const locations = readJson<TrafficLocation[]>(TRAFFIC_LOCATIONS_FILE, []);
+    return locations;
+  },
+
+  async getTrafficLocation(id: string): Promise<TrafficLocation | null> {
+    const locations = readJson<TrafficLocation[]>(TRAFFIC_LOCATIONS_FILE, []);
+    return locations.find((loc) => loc.id === id) || null;
+  },
+
+  async createTrafficLocation(payload: {
+    name: string;
+    address: string;
+  }): Promise<TrafficLocation> {
+    const locations = readJson<TrafficLocation[]>(TRAFFIC_LOCATIONS_FILE, []);
+    const now = new Date().toISOString();
+    const location: TrafficLocation = {
+      id: uid(),
+      name: payload.name,
+      address: payload.address,
+      createdAt: now,
+      updatedAt: now,
+    };
+    locations.push(location);
+    writeJson(TRAFFIC_LOCATIONS_FILE, locations);
+    return location;
+  },
+
+  async deleteTrafficLocation(id: string): Promise<boolean> {
+    const locations = readJson<TrafficLocation[]>(TRAFFIC_LOCATIONS_FILE, []);
+    const filtered = locations.filter((loc) => loc.id !== id);
+    if (filtered.length === locations.length) {
+      return false; // Not found
+    }
+    writeJson(TRAFFIC_LOCATIONS_FILE, filtered);
+    return true;
+  },
+
+  // Favorite Routes
+  async getFavoriteRoutes(): Promise<FavoriteRoute[]> {
+    const routes = readJson<FavoriteRoute[]>(FAVORITE_ROUTES_FILE, []);
+    return routes;
+  },
+
+  async getFavoriteRoute(id: string): Promise<FavoriteRoute | null> {
+    const routes = readJson<FavoriteRoute[]>(FAVORITE_ROUTES_FILE, []);
+    return routes.find((r) => r.id === id) || null;
+  },
+
+  async createFavoriteRoute(
+    payload: Partial<FavoriteRoute>
+  ): Promise<FavoriteRoute> {
+    const routes = readJson<FavoriteRoute[]>(FAVORITE_ROUTES_FILE, []);
+    const now = new Date().toISOString();
+    const route: FavoriteRoute = {
+      id: uid(),
+      name: payload.name || "Untitled Route",
+      originId: payload.originId!,
+      originAddress: payload.originAddress!,
+      destinationId: payload.destinationId!,
+      destinationAddress: payload.destinationAddress!,
+      departureTime: payload.departureTime,
+      arrivalTime: payload.arrivalTime,
+      notifyOnTraffic: payload.notifyOnTraffic || false,
+      baselineDuration: payload.baselineDuration,
+      createdAt: now,
+      updatedAt: now,
+    };
+    routes.push(route);
+    writeJson(FAVORITE_ROUTES_FILE, routes);
+    return route;
+  },
+
+  async updateFavoriteRoute(
+    id: string,
+    payload: Partial<FavoriteRoute>
+  ): Promise<FavoriteRoute | null> {
+    const routes = readJson<FavoriteRoute[]>(FAVORITE_ROUTES_FILE, []);
+    const index = routes.findIndex((r) => r.id === id);
+    if (index === -1) return null;
+
+    const updated = {
+      ...routes[index],
+      ...payload,
+      id: routes[index].id,
+      updatedAt: new Date().toISOString(),
+    };
+    routes[index] = updated;
+    writeJson(FAVORITE_ROUTES_FILE, routes);
+    return updated;
+  },
+
+  async deleteFavoriteRoute(id: string): Promise<boolean> {
+    const routes = readJson<FavoriteRoute[]>(FAVORITE_ROUTES_FILE, []);
+    const filtered = routes.filter((r) => r.id !== id);
+    if (filtered.length === routes.length) {
+      return false;
+    }
+    writeJson(FAVORITE_ROUTES_FILE, filtered);
+    return true;
+  },
+
+  // Traffic Alerts
+  async getTrafficAlerts(): Promise<TrafficAlert[]> {
+    const alerts = readJson<TrafficAlert[]>(TRAFFIC_ALERTS_FILE, []);
+    return alerts.filter((a) => !a.dismissed);
+  },
+
+  async createTrafficAlert(
+    payload: Omit<TrafficAlert, "id" | "timestamp">
+  ): Promise<TrafficAlert> {
+    const alerts = readJson<TrafficAlert[]>(TRAFFIC_ALERTS_FILE, []);
+    const now = new Date().toISOString();
+    const alert: TrafficAlert = {
+      id: uid(),
+      routeId: payload.routeId,
+      routeName: payload.routeName,
+      normalDuration: payload.normalDuration,
+      currentDuration: payload.currentDuration,
+      delay: payload.delay,
+      routeSummary: payload.routeSummary,
+      timestamp: now,
+      dismissed: false,
+    };
+    alerts.unshift(alert); // Add to beginning
+    writeJson(TRAFFIC_ALERTS_FILE, alerts);
+    return alert;
+  },
+
+  async dismissTrafficAlert(id: string): Promise<boolean> {
+    const alerts = readJson<TrafficAlert[]>(TRAFFIC_ALERTS_FILE, []);
+    const alert = alerts.find((a) => a.id === id);
+    if (!alert) return false;
+
+    alert.dismissed = true;
+    writeJson(TRAFFIC_ALERTS_FILE, alerts);
+    return true;
+  },
+
+  async clearTrafficAlerts(): Promise<number> {
+    const alerts = readJson<TrafficAlert[]>(TRAFFIC_ALERTS_FILE, []);
+    const count = alerts.length;
+    writeJson(TRAFFIC_ALERTS_FILE, []);
+    return count;
   },
 };
 

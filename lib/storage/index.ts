@@ -97,6 +97,26 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
       adapter.cacheArticles(articles, ttlSeconds),
     clearArticleCache: (sourceId?: string) =>
       adapter.clearArticleCache(sourceId),
+    getTrafficLocations: () => adapter.getTrafficLocations(userId),
+    getTrafficLocation: (id: string) => adapter.getTrafficLocation(id, userId),
+    createTrafficLocation: (payload: { name: string; address: string }) =>
+      adapter.createTrafficLocation(payload, userId),
+    deleteTrafficLocation: (id: string) =>
+      adapter.deleteTrafficLocation(id, userId),
+    getFavoriteRoutes: () => adapter.getFavoriteRoutes(userId),
+    getFavoriteRoute: (id: string) => adapter.getFavoriteRoute(id, userId),
+    createFavoriteRoute: (payload: any) =>
+      adapter.createFavoriteRoute(payload, userId),
+    updateFavoriteRoute: (id: string, payload: any) =>
+      adapter.updateFavoriteRoute(id, payload, userId),
+    deleteFavoriteRoute: (id: string) =>
+      adapter.deleteFavoriteRoute(id, userId),
+    getTrafficAlerts: () => adapter.getTrafficAlerts(userId),
+    createTrafficAlert: (payload: any) =>
+      adapter.createTrafficAlert(payload, userId),
+    dismissTrafficAlert: (id: string) =>
+      adapter.dismissTrafficAlert(id, userId),
+    clearTrafficAlerts: () => adapter.clearTrafficAlerts(userId),
   };
 }
 

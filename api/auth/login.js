@@ -43,7 +43,7 @@ export default function handler(req, res) {
       "openid email profile https://www.googleapis.com/auth/calendar.readonly",
     state,
     access_type: "offline",
-    prompt: "consent",
+    prompt: "consent", // Changed from "select_account" to always get refresh token
   });
 
   const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;

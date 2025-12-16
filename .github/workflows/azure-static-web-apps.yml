@@ -67,6 +67,10 @@ jobs:
               COSMOS_CONTAINER_CALENDAR="${{ secrets.COSMOS_CONTAINER_CALENDAR }}" \
               COSMOS_CONTAINER_NEWS_SOURCES="${{ secrets.COSMOS_CONTAINER_NEWS_SOURCES }}" \
               COSMOS_CONTAINER_NEWS_CACHE="${{ secrets.COSMOS_CONTAINER_NEWS_CACHE }}"
+              COSMOS_CONTAINER_TRAFFIC_LOCATIONS="${{ secrets.COSMOS_CONTAINER_TRAFFIC_LOCATIONS }}" \
+              COSMOS_CONTAINER_FAVORITE_ROUTES="${{ secrets.COSMOS_CONTAINER_FAVORITE_ROUTES }}" \
+              COSMOS_CONTAINER_TRAFFIC_ALERTS="${{ secrets.COSMOS_CONTAINER_TRAFFIC_ALERTS }}" \
+              GOOGLE_MAPS_API_KEY="${{ secrets.GOOGLE_MAPS_API_KEY }}"
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:

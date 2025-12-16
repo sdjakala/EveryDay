@@ -86,6 +86,43 @@ type NewsArticleCache = {
   cachedAt: string; // when it was cached
   ttl?: number; // Cosmos DB TTL in seconds (auto-delete)
 };
+type TrafficLocation = {
+  id: string;
+  name: string; // Friendly name (e.g. "Home", "School", "Work")
+  address: string; // Full address for Google Maps API
+  createdAt?: string;
+  updatedAt?: string;
+  userId?: string; // Owner of the location
+  sharedWith?: string[]; // Array of userIds this location is shared with
+};
+type FavoriteRoute = {
+  id: string;
+  name: string; // Friendly name for the route (e.g., "Morning Commute")
+  originId: string; // Reference to saved location
+  originAddress: string; // Stored for quick access
+  destinationId: string;
+  destinationAddress: string;
+  departureTime?: string; // Preferred departure time (HH:mm format)
+  arrivalTime?: string; // Preferred arrival time (HH:mm format)
+  notifyOnTraffic?: boolean; // Send alert when traffic is unusually high
+  baselineDuration?: number; // Typical duration in seconds (for comparison)
+  createdAt?: string;
+  updatedAt?: string;
+  userId?: string;
+  sharedWith?: string[];
+};
+type TrafficAlert = {
+  id: string;
+  routeId: string; // Reference to favorite route
+  routeName: string; // Stored for display
+  normalDuration: string; // e.g., "25 mins"
+  currentDuration: string; // e.g., "45 mins"
+  delay: string; // e.g., "20 mins longer"
+  routeSummary: string; // Main route description
+  timestamp: string;
+  dismissed?: boolean;
+  userId?: string;
+};
 
 const endpoint = process.env.COSMOS_ENDPOINT || "";
 const key = process.env.COSMOS_KEY || "";
@@ -99,6 +136,12 @@ const newsSourcesContainerId =
   process.env.COSMOS_CONTAINER_NEWS_SOURCES || "NewsSources";
 const newsArticlesCacheContainerId =
   process.env.COSMOS_CONTAINER_NEWS_CACHE || "NewsArticlesCache";
+const trafficLocationsContainerId =
+  process.env.COSMOS_CONTAINER_TRAFFIC_LOCATIONS || "TrafficLocations";
+const favoriteRoutesContainerId =
+  process.env.COSMOS_CONTAINER_FAVORITE_ROUTES || "FavoriteRoutes";
+const trafficAlertsContainerId =
+  process.env.COSMOS_CONTAINER_TRAFFIC_ALERTS || "TrafficAlerts";
 
 let client: CosmosClient | null = null;
 
@@ -1030,6 +1073,334 @@ const cosmosAdapter = {
       return resources.length;
     } catch (e: any) {
       console.error("Error clearing article cache:", e);
+      return 0;
+    }
+  },
+
+  // Traffic Locations
+  async getTrafficLocations(userId?: string): Promise<TrafficLocation[]> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(trafficLocationsContainerId);
+
+    if (!userId) {
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.createdAt DESC")
+        .fetchAll();
+      return resources as TrafficLocation[];
+    }
+
+    const query = {
+      query: `SELECT * FROM c WHERE ${buildAccessFilter(userId)} ORDER BY c.createdAt DESC`,
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as TrafficLocation[];
+  },
+
+  async getTrafficLocation(
+    id: string,
+    userId?: string
+  ): Promise<TrafficLocation | null> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(trafficLocationsContainerId);
+    try {
+      const { resource } = await container.item(id, id).read<TrafficLocation>();
+      if (!resource) return null;
+
+      if (
+        userId &&
+        resource.userId !== userId &&
+        !resource.sharedWith?.includes(userId)
+      ) {
+        return null;
+      }
+
+      return resource || null;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async createTrafficLocation(
+    payload: { name: string; address: string },
+    userId?: string
+  ): Promise<TrafficLocation> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(trafficLocationsContainerId);
+    const now = new Date().toISOString();
+    const location: TrafficLocation = {
+      id: uid(),
+      name: payload.name,
+      address: payload.address,
+      createdAt: now,
+      updatedAt: now,
+      userId: userId,
+      sharedWith: [],
+    };
+    const { resource } = await container.items.create(location);
+    return resource as TrafficLocation;
+  },
+
+  async deleteTrafficLocation(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(trafficLocationsContainerId);
+    try {
+      const existing = await this.getTrafficLocation(id, userId);
+      if (!existing) return false;
+
+      // Check if user owns it
+      if (userId && existing.userId !== userId) {
+        return false;
+      }
+
+      await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  // Favorite Routes
+  async getFavoriteRoutes(userId?: string): Promise<FavoriteRoute[]> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(favoriteRoutesContainerId);
+
+    if (!userId) {
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.createdAt DESC")
+        .fetchAll();
+      return resources as FavoriteRoute[];
+    }
+
+    const query = {
+      query: `SELECT * FROM c WHERE ${buildAccessFilter(userId)} ORDER BY c.createdAt DESC`,
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as FavoriteRoute[];
+  },
+
+  async getFavoriteRoute(
+    id: string,
+    userId?: string
+  ): Promise<FavoriteRoute | null> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(favoriteRoutesContainerId);
+    try {
+      const { resource } = await container.item(id, id).read<FavoriteRoute>();
+      if (!resource) return null;
+
+      if (
+        userId &&
+        resource.userId !== userId &&
+        !resource.sharedWith?.includes(userId)
+      ) {
+        return null;
+      }
+
+      return resource || null;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async createFavoriteRoute(
+    payload: Partial<FavoriteRoute>,
+    userId?: string
+  ): Promise<FavoriteRoute> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(favoriteRoutesContainerId);
+    const now = new Date().toISOString();
+    const route: FavoriteRoute = {
+      id: uid(),
+      name: payload.name || "Untitled Route",
+      originId: payload.originId!,
+      originAddress: payload.originAddress!,
+      destinationId: payload.destinationId!,
+      destinationAddress: payload.destinationAddress!,
+      departureTime: payload.departureTime,
+      arrivalTime: payload.arrivalTime,
+      notifyOnTraffic: payload.notifyOnTraffic || false,
+      baselineDuration: payload.baselineDuration,
+      createdAt: now,
+      updatedAt: now,
+      userId: userId,
+      sharedWith: [],
+    };
+    const { resource } = await container.items.create(route);
+    return resource as FavoriteRoute;
+  },
+
+  async updateFavoriteRoute(
+    id: string,
+    payload: Partial<FavoriteRoute>,
+    userId?: string
+  ): Promise<FavoriteRoute | null> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(favoriteRoutesContainerId);
+    try {
+      const existing = await this.getFavoriteRoute(id, userId);
+      if (!existing) return null;
+
+      if (userId && existing.userId !== userId) {
+        return null;
+      }
+
+      const updated = {
+        ...existing,
+        ...payload,
+        id: existing.id,
+        updatedAt: new Date().toISOString(),
+      };
+      const { resource } = await container.item(id, id).replace(updated);
+      return resource as FavoriteRoute;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async deleteFavoriteRoute(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(favoriteRoutesContainerId);
+    try {
+      const existing = await this.getFavoriteRoute(id, userId);
+      if (!existing) return false;
+
+      if (userId && existing.userId !== userId) {
+        return false;
+      }
+
+      await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  // Traffic Alerts
+  async getTrafficAlerts(userId?: string): Promise<TrafficAlert[]> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(trafficAlertsContainerId);
+
+    if (!userId) {
+      const { resources } = await container.items
+        .query(
+          "SELECT * FROM c WHERE NOT c.dismissed ORDER BY c.timestamp DESC"
+        )
+        .fetchAll();
+      return resources as TrafficAlert[];
+    }
+
+    const query = {
+      query:
+        "SELECT * FROM c WHERE c.userId = @userId AND NOT c.dismissed ORDER BY c.timestamp DESC",
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as TrafficAlert[];
+  },
+
+  async createTrafficAlert(
+    payload: Omit<TrafficAlert, "id" | "timestamp">,
+    userId?: string
+  ): Promise<TrafficAlert> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(trafficAlertsContainerId);
+    const now = new Date().toISOString();
+    const alert: TrafficAlert = {
+      id: uid(),
+      routeId: payload.routeId,
+      routeName: payload.routeName,
+      normalDuration: payload.normalDuration,
+      currentDuration: payload.currentDuration,
+      delay: payload.delay,
+      routeSummary: payload.routeSummary,
+      timestamp: now,
+      dismissed: false,
+      userId: userId,
+    };
+    const { resource } = await container.items.create(alert);
+    return resource as TrafficAlert;
+  },
+
+  async dismissTrafficAlert(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(trafficAlertsContainerId);
+    try {
+      const { resource: existing } = await container
+        .item(id, id)
+        .read<TrafficAlert>();
+      if (!existing) return false;
+
+      if (userId && existing.userId !== userId) {
+        return false;
+      }
+
+      const updated = { ...existing, dismissed: true };
+      await container.item(id, id).replace(updated);
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  async clearTrafficAlerts(userId?: string): Promise<number> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(trafficAlertsContainerId);
+
+    try {
+      let query;
+      if (userId) {
+        query = {
+          query: "SELECT c.id FROM c WHERE c.userId = @userId",
+          parameters: [{ name: "@userId", value: userId }],
+        };
+      } else {
+        query = "SELECT c.id FROM c";
+      }
+
+      const { resources } = await container.items.query(query).fetchAll();
+
+      const deletePromises = resources.map((item) =>
+        container.item(item.id, item.id).delete()
+      );
+      await Promise.all(deletePromises);
+
+      return resources.length;
+    } catch (e: any) {
+      console.error("Error clearing traffic alerts:", e);
       return 0;
     }
   },
