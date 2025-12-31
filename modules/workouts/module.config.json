@@ -1,0 +1,7 @@
+{
+  "id": "workouts",
+  "name": "Workouts",
+  "description": "Track your workouts with lifts, sets, and rest timers",
+  "icon": "dumbbell",
+  "enabled": true
+}

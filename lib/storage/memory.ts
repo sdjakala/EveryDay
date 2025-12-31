@@ -27,6 +27,13 @@ type Task = {
   createdAt?: string;
   updatedAt?: string;
 };
+type Workout = {
+  id: string;
+  title: string;
+  lifts: any[];
+  createdAt?: string;
+  updatedAt?: string;
+};
 type CalendarEvent = {
   id: string;
   title: string;
@@ -94,6 +101,7 @@ const TASKS_FILE = path.join(DATA_DIR, "backend_tasks.json");
 const CALENDAR_FILE = path.join(DATA_DIR, "backend_calendar.json");
 const NEWS_SOURCES_FILE = path.join(DATA_DIR, "backend_news_sources.json");
 const NEWS_CACHE_FILE = path.join(DATA_DIR, "backend_news_cache.json");
+const WORKOUT_RESULTS_FILE = path.join(DATA_DIR, "backend_workout_results.json");
 const TRAFFIC_LOCATIONS_FILE = path.join(
   DATA_DIR,
   "backend_traffic_locations.json"
@@ -148,6 +156,7 @@ let grocery: Record<string, Item[]> = readJson<Record<string, Item[]>>(
   {}
 );
 let tasks: Task[] = readJson<Task[]>(TASKS_FILE, []);
+let workouts: Workout[] = [];
 let calendarEvents: CalendarEvent[] = readJson<CalendarEvent[]>(
   CALENDAR_FILE,
   []
@@ -160,6 +169,7 @@ let newsArticlesCache: NewsArticleCache[] = readJson<NewsArticleCache[]>(
   NEWS_CACHE_FILE,
   []
 );
+let workoutResults: any[] = readJson<any[]>(WORKOUT_RESULTS_FILE, []);
 
 function persist() {
   if (!SHOULD_PERSIST) return;
@@ -169,6 +179,7 @@ function persist() {
   writeJson(CALENDAR_FILE, calendarEvents);
   writeJson(NEWS_SOURCES_FILE, newsSources);
   writeJson(NEWS_CACHE_FILE, newsArticlesCache);
+  writeJson(WORKOUT_RESULTS_FILE, workoutResults);
 }
 
 const memoryAdapter = {
@@ -311,6 +322,79 @@ const memoryAdapter = {
     tasks = tasks.filter((t) => t.id !== id);
     persist();
     return prev !== tasks.length;
+  },
+
+  // Workouts
+  async getWorkouts(_userId?: string) {
+    return workouts;
+  },
+  async getWorkout(id: string, _userId?: string) {
+    return workouts.find((w) => w.id === id) || null;
+  },
+  async addWorkout(payload: Partial<Workout>, _userId?: string) {
+    const now = new Date().toISOString();
+    const workout: Workout = {
+      id: payload.id || uid(),
+      title: payload.title || "Untitled Workout",
+      lifts: payload.lifts || [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    workouts = [workout, ...workouts];
+    return workout;
+  },
+  async updateWorkout(id: string, payload: Partial<Workout>, _userId?: string) {
+    const now = new Date().toISOString();
+    workouts = workouts.map((w) =>
+      w.id === id ? { ...w, ...payload, updatedAt: now } : w
+    );
+    return workouts.find((w) => w.id === id) || null;
+  },
+  async deleteWorkout(id: string, _userId?: string) {
+    const prev = workouts.length;
+    workouts = workouts.filter((w) => w.id !== id);
+    return prev !== workouts.length;
+  },
+
+  // Workout Results
+  async createWorkoutResult(payload: any, _userId?: string) {
+    const now = new Date().toISOString();
+    const r = {
+      id: payload.id || uid(),
+      ...payload,
+      completedAt: payload.completedAt || now,
+    };
+    workoutResults = [r, ...workoutResults];
+    persist();
+    return r;
+  },
+
+  async listWorkoutResults(_userId?: string) {
+    return workoutResults;
+  },
+
+  async deleteWorkoutResult(id: string, _userId?: string) {
+    const before = workoutResults.length;
+    workoutResults = workoutResults.filter((r) => r.id !== id);
+    persist();
+    return before !== workoutResults.length;
+  },
+
+  async clearWorkoutResults(liftName?: string, _userId?: string) {
+    if (!liftName) {
+      const count = workoutResults.length;
+      workoutResults = [];
+      persist();
+      return count;
+    }
+    const before = workoutResults.length;
+    workoutResults = workoutResults.filter((r) => {
+      if (!r.lifts) return true;
+      return !r.lifts.some((l: any) => l.name === liftName);
+    });
+    const removed = before - workoutResults.length;
+    persist();
+    return removed;
   },
 
   // Calendar Events

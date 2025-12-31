@@ -76,6 +76,12 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
     updateTask: (id: string, payload: any) =>
       adapter.updateTask(id, payload, userId),
     deleteTask: (id: string) => adapter.deleteTask(id, userId),
+    getWorkouts: () => adapter.getWorkouts(userId),
+    getWorkout: (id: string) => adapter.getWorkout(id, userId),
+    addWorkout: (payload: any) => adapter.addWorkout(payload, userId),
+    updateWorkout: (id: string, payload: any) =>
+      adapter.updateWorkout(id, payload, userId),
+    deleteWorkout: (id: string) => adapter.deleteWorkout(id, userId),
     getCalendarEvents: () => adapter.getCalendarEvents(userId),
     getCalendarEvent: (id: string) => adapter.getCalendarEvent(id, userId),
     createCalendarEvent: (payload: any) =>
@@ -117,6 +123,11 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
     dismissTrafficAlert: (id: string) =>
       adapter.dismissTrafficAlert(id, userId),
     clearTrafficAlerts: () => adapter.clearTrafficAlerts(userId),
+    createWorkoutResult: (payload: any) =>
+      adapter.createWorkoutResult(payload, userId),
+    listWorkoutResults: () => adapter.listWorkoutResults(userId),
+    deleteWorkoutResult: (id: string) => adapter.deleteWorkoutResult ? adapter.deleteWorkoutResult(id, userId) : Promise.resolve(false),
+    clearWorkoutResults: (liftName?: string) => adapter.clearWorkoutResults ? adapter.clearWorkoutResults(liftName, userId) : Promise.resolve(0),
   };
 }
 

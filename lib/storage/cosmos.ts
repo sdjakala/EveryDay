@@ -1,11 +1,40 @@
 /* eslint-disable no-unused-vars */
 // Cosmos DB adapter
+
 // To use: set `STORAGE_ADAPTER=cosmos` and configure the following env vars:
 // - COSMOS_ENDPOINT
 // - COSMOS_KEY
 // - COSMOS_DATABASE
 // - COSMOS_CONTAINER_RECIPES
 // - COSMOS_CONTAINER_GROCERY
+// - COSMOS_CONTAINER_WORKOUT_RESULTS
+
+export type WorkoutResult = {
+  id: string;
+  workoutId: string;
+  title: string;
+  completedAt: string;
+  lifts: Array<{
+    id: string;
+    name: string;
+    sets: Array<{
+      repNumber: number;
+      reps: number;
+      weight: number;
+      restSeconds: number;
+    }>;
+  }>;
+  userId: string;
+};
+
+type Workout = {
+  id: string;
+  title: string;
+  lifts: any[];
+  createdAt?: string;
+  updatedAt?: string;
+  userId?: string;
+};
 
 import { CosmosClient } from "@azure/cosmos";
 
@@ -130,6 +159,8 @@ const databaseId = process.env.COSMOS_DATABASE || "EveryDay";
 const recipesContainerId = process.env.COSMOS_CONTAINER_RECIPES || "Recipes";
 const groceryContainerId = process.env.COSMOS_CONTAINER_GROCERY || "Grocery";
 const tasksContainerId = process.env.COSMOS_CONTAINER_TASKS || "Tasks";
+const workoutsContainerId = process.env.COSMOS_CONTAINER_WORKOUTS || "Workouts";
+const workoutResultsContainerId = process.env.COSMOS_CONTAINER_WORKOUT_RESULTS || "WorkoutResults";
 const tokensContainerId = process.env.COSMOS_CONTAINER_TOKENS || "Tokens";
 const calendarContainerId = process.env.COSMOS_CONTAINER_CALENDAR || "Calendar";
 const newsSourcesContainerId =
@@ -1402,6 +1433,196 @@ const cosmosAdapter = {
     } catch (e: any) {
       console.error("Error clearing traffic alerts:", e);
       return 0;
+    }
+  },
+
+  // --- WORKOUT RESULTS ---
+  async createWorkoutResult(
+    payload: Omit<WorkoutResult, "id">,
+    userId?: string
+  ): Promise<WorkoutResult> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutResultsContainerId);
+    const now = new Date().toISOString();
+    const result: WorkoutResult = {
+      id: uid(),
+      ...payload,
+      completedAt: payload.completedAt || now,
+      userId: userId || payload.userId,
+    };
+    const { resource } = await container.items.create(result);
+    return resource as WorkoutResult;
+  },
+
+  async listWorkoutResults(userId?: string): Promise<WorkoutResult[]> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutResultsContainerId);
+    if (!userId) {
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.completedAt DESC")
+        .fetchAll();
+      return resources as WorkoutResult[];
+    }
+    const query = {
+      query: `SELECT * FROM c WHERE c.userId = @userId ORDER BY c.completedAt DESC`,
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as WorkoutResult[];
+  },
+
+  async deleteWorkoutResult(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutResultsContainerId);
+    try {
+      await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  async clearWorkoutResults(liftName?: string, userId?: string): Promise<number> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutResultsContainerId);
+    try {
+      let query;
+      if (!liftName) {
+        query = "SELECT c.id FROM c";
+      } else {
+        query = {
+          query: "SELECT DISTINCT c.id FROM c JOIN l IN c.lifts WHERE l.name = @liftName",
+          parameters: [{ name: "@liftName", value: liftName }],
+        };
+      }
+
+      const { resources } = await container.items.query(query).fetchAll();
+      const deletePromises = resources.map((item) => container.item(item.id, item.id).delete());
+      await Promise.all(deletePromises);
+
+      return resources.length;
+    } catch (e: any) {
+      console.error("Error clearing workout results:", e);
+      return 0;
+    }
+  },
+
+  // Workouts
+  async getWorkouts(userId?: string): Promise<Workout[]> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutsContainerId);
+
+    if (!userId) {
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.createdAt DESC")
+        .fetchAll();
+      return resources as Workout[];
+    }
+
+    const query = {
+      query: `SELECT * FROM c WHERE c.userId = @userId ORDER BY c.createdAt DESC`,
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as Workout[];
+  },
+
+  async getWorkout(id: string, userId?: string): Promise<Workout | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutsContainerId);
+    try {
+      const { resource } = await container.item(id, id).read<Workout>();
+      if (!resource) return null;
+
+      if (
+        userId &&
+        resource.userId !== userId
+      ) {
+        return null;
+      }
+
+      return resource || null;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async addWorkout(
+    payload: Partial<Workout>,
+    userId?: string
+  ): Promise<Workout> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutsContainerId);
+    const now = new Date().toISOString();
+    const workout: Workout = {
+      id: payload.id || uid(),
+      title: payload.title || "Untitled Workout",
+      lifts: payload.lifts || [],
+      createdAt: now,
+      updatedAt: now,
+      userId: userId || payload.userId,
+    };
+    const { resource } = await container.items.create(workout);
+    return resource as Workout;
+  },
+
+  async updateWorkout(
+    id: string,
+    payload: Partial<Workout>,
+    userId?: string
+  ): Promise<Workout | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutsContainerId);
+
+    try {
+      const { resource: existing } = await container.item(id, id).read<Workout>();
+      if (!existing) return null;
+
+      if (
+        userId &&
+        existing.userId !== userId
+      ) {
+        return null;
+      }
+
+      const updated: Workout = {
+        ...existing,
+        ...payload,
+        id: existing.id,
+        userId: existing.userId,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const { resource } = await container.item(id, id).replace(updated);
+      return resource as Workout;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async deleteWorkout(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client.database(databaseId).container(workoutsContainerId);
+
+    try {
+      const { resource: existing } = await container.item(id, id).read<Workout>();
+      if (!existing) return false;
+
+      if (
+        userId &&
+        existing.userId !== userId
+      ) {
+        return false;
+      }
+
+      await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
     }
   },
 };

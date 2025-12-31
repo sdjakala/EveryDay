@@ -121,28 +121,69 @@ export default async function handler(
     if (timeMin) params.append("timeMin", timeMin as string);
     if (timeMax) params.append("timeMax", timeMax as string);
 
-    const calendarResponse = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
+    // First, get list of all calendars to fetch events from
+    let calendarMap: Record<string, { name: string; color: string }> = {};
+    let calendarIds: string[] = ["primary"];
+    try {
+      const calendarListResponse = await fetch(
+        "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
 
-    if (!calendarResponse.ok) {
-      const errorText = await calendarResponse.text();
-      console.error("Calendar API error:", errorText);
-      return res.status(calendarResponse.status).json({
-        error: "Failed to fetch calendar events",
-        details: errorText,
-      });
+      if (calendarListResponse.ok) {
+        const calendarListData = await calendarListResponse.json();
+        // Get IDs of all calendars that are visible (not hidden)
+        const visibleCals = (calendarListData.items || []).filter(
+          (cal: any) => cal.accessRole !== "freeBusyReader"
+        );
+        calendarIds = visibleCals.map((cal: any) => cal.id);
+        
+        // Build map of calendar ID -> name and color
+        visibleCals.forEach((cal: any) => {
+          calendarMap[cal.id] = {
+            name: cal.summary || cal.id,
+            color: cal.backgroundColor || "#4285F4", // Google Calendar blue as default
+          };
+        });
+        
+        console.log("Found calendars:", calendarMap);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch calendar list, using primary only:", e);
     }
 
-    const calendarData = await calendarResponse.json();
+    // Fetch events from all calendars
+    const allEvents: any[] = [];
+    for (const calendarId of calendarIds) {
+      try {
+        const calendarResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+
+        if (calendarResponse.ok) {
+          const calendarData = await calendarResponse.json();
+          const itemsWithCal = (calendarData.items || []).map((item: any) => ({
+            ...item,
+            _calendarId: calendarId,
+          }));
+          allEvents.push(...itemsWithCal);
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch events from calendar ${calendarId}:`, e);
+      }
+    }
 
     // Transform Google Calendar events to our format
-    const events = (calendarData.items || []).map((event: any) => ({
+    const events = (allEvents || []).map((event: any) => ({
       id: event.id,
       title: event.summary || "(No title)",
       start: event.start?.dateTime || event.start?.date,
@@ -150,6 +191,9 @@ export default async function handler(
       location: event.location,
       description: event.description,
       htmlLink: event.htmlLink,
+      calendarId: event._calendarId,
+      calendarName: calendarMap[event._calendarId]?.name || event._calendarId,
+      color: calendarMap[event._calendarId]?.color || "#4285F4",
     }));
 
     return res.status(200).json({ events });

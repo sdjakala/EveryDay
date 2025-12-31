@@ -33,6 +33,13 @@
   }
   ,
   {
+    "name": "workouts",
+    "description": "Workout tracking with lifts, sets, and rest timers",
+    "enabled": true,
+    "minRank": 0
+  }
+  ,
+  {
     "name": "traffic",
     "description": "Traffic routes and commute planning",
     "enabled": true,

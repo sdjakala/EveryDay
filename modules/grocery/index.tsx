@@ -17,6 +17,30 @@ function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
 
+function playCheckSound() {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const now = audioContext.currentTime;
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+    
+    // Click/check mark sound: quick descending pitch like a pen click
+    osc.frequency.setValueAtTime(1000, now);
+    osc.frequency.exponentialRampToValueAtTime(300, now + 0.12);
+    
+    gain.gain.setValueAtTime(0.25, now);
+    gain.gain.setValueAtTime(0, now + 0.12);
+    
+    osc.start(now);
+    osc.stop(now + 0.12);
+  } catch (e) {
+    // Silently fail if audio context not available
+  }
+}
+
 export default function GroceryModule() {
   const [sections] = useState<string[]>(DEFAULT_SECTIONS);
   const [lists, setLists] = useState<Record<string, Item[]>>({});
@@ -163,6 +187,7 @@ export default function GroceryModule() {
   }
 
   function toggleDone(section: string, id: string) {
+    playCheckSound();
     setLists((s) => ({
       ...s,
       [section]: s[section].map((it) =>
@@ -202,6 +227,24 @@ export default function GroceryModule() {
     }).catch(() => {});
   }
 
+  function clearCompleted() {
+    setLists((s) => {
+      const updated = { ...s };
+      Object.keys(updated).forEach((section) => {
+        updated[section] = updated[section].filter((it) => !it.done);
+      });
+      return updated;
+    });
+    // best-effort: persist changes to server
+    Object.keys(lists).forEach((section) => {
+      lists[section]
+        .filter((it) => it.done)
+        .forEach((it) => {
+          apiDeleteGroceryItem(section, it.id).catch(() => {});
+        });
+    });
+  }
+
   if (loading) {
     return (
       <div className="module-card">
@@ -227,6 +270,22 @@ export default function GroceryModule() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {showCompleted &&
+            Object.values(lists).some((items) =>
+              items.some((it) => it.done)
+            ) && (
+              <button
+                className="toggle-btn"
+                onClick={clearCompleted}
+                title="Delete all completed items"
+                style={{ backgroundColor: "var(--danger-color, #e74c3c)" }}
+              >
+                <span className="icon">
+                  <Icon name="trash" />
+                </span>
+                <span style={{ fontSize: 13 }}>Clear completed</span>
+              </button>
+            )}
           <button
             className={`toggle-btn ${showCompleted ? "active" : ""}`}
             title={showCompleted ? "Showing completed" : "Show completed"}
@@ -364,7 +423,12 @@ export default function GroceryModule() {
                           ) : (
                             <div
                               className={`task-title ${it.done ? "completed" : ""}`}
-                              style={{ flex: 1 }}
+                              style={{ flex: 1, cursor: "pointer" }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleDone(section, it.id);
+                              }}
                             >
                               {it.title}
                             </div>

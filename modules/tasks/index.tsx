@@ -3,12 +3,50 @@ import Icon from "../../components/Icon";
 
 type Task = { id: string; title: string; completed?: boolean };
 
+function playCheckSound() {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const now = audioContext.currentTime;
+    
+    // Create two oscillators for a rich thump sound
+    const osc1 = audioContext.createOscillator();
+    const osc2 = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(audioContext.destination);
+    
+    // Lower frequency for a thump/knock sound
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(150, now);
+    osc1.frequency.exponentialRampToValueAtTime(50, now + 0.05);
+    
+    // Add a mid-range component for texture
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(280, now);
+    osc2.frequency.exponentialRampToValueAtTime(80, now + 0.04);
+    
+    // Quick attack and decay for a percussive thump
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+    
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.05);
+    osc2.stop(now + 0.05);
+  } catch (e) {
+    // Silently fail if audio context not available
+  }
+}
+
 export default function TasksModule() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [text, setText] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showCompleted, setShowCompleted] = useState(false);
 
   useEffect(() => {
     fetchTasks();
@@ -51,6 +89,7 @@ export default function TasksModule() {
   async function toggle(id: string) {
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
+    playCheckSound();
     try {
       const res = await fetch(`/api/tasks/${id}`, {
         method: "PATCH",
@@ -76,6 +115,13 @@ export default function TasksModule() {
       }
     } catch (e) {
       console.error("Failed to delete task:", e);
+    }
+  }
+
+  async function clearCompleted() {
+    const completedIds = tasks.filter((t) => t.completed).map((t) => t.id);
+    for (const id of completedIds) {
+      await remove(id);
     }
   }
 
@@ -108,8 +154,52 @@ export default function TasksModule() {
     return <div>Loading tasks...</div>;
   }
 
+  const visibleTasks = tasks.filter((t) =>
+    showCompleted ? true : !t.completed
+  );
+
   return (
     <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <h3 style={{ margin: 0 }}>Tasks</h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {showCompleted && tasks.some((t) => t.completed) && (
+            <button
+              className="toggle-btn"
+              onClick={clearCompleted}
+              title="Delete all completed tasks"
+              style={{ backgroundColor: "var(--danger-color, #e74c3c)" }}
+            >
+              <span className="icon">
+                <Icon name="trash" />
+              </span>
+              <span style={{ fontSize: 13 }}>Clear completed</span>
+            </button>
+          )}
+          <button
+            className={`toggle-btn ${showCompleted ? "active" : ""}`}
+            title={showCompleted ? "Showing completed" : "Show completed"}
+            aria-pressed={showCompleted}
+            onClick={() => setShowCompleted((s) => !s)}
+          >
+            <span className="icon">
+              <Icon name="check" />
+            </span>
+            <span style={{ fontSize: 13 }}>
+              {showCompleted ? "Completed" : "Show completed"}
+            </span>
+          </button>
+        </div>
+      </div>
+
       <div className="tasks-toolbar">
         <form className="create-task-form" onSubmit={addTask}>
           <input
@@ -125,7 +215,7 @@ export default function TasksModule() {
       </div>
 
       <div className="tasks-list">
-        {tasks.map((t) => (
+        {visibleTasks.map((t) => (
           <div className="task-item" key={t.id}>
             <div className="task-checkbox" onClick={() => toggle(t.id)}>
               {t.completed ? <Icon name="check" size={14} /> : null}
@@ -140,7 +230,11 @@ export default function TasksModule() {
                 onKeyDown={(e) => e.key === "Enter" && saveEdit(t.id)}
               />
             ) : (
-              <div className={`task-title ${t.completed ? "completed" : ""}`}>
+              <div
+                className={`task-title ${t.completed ? "completed" : ""}`}
+                onClick={() => toggle(t.id)}
+                style={{ cursor: "pointer", flex: 1 }}
+              >
                 {t.title}
               </div>
             )}

@@ -10,6 +10,9 @@ type EventItem = {
   location?: string;
   description?: string;
   source?: "google" | "custom"; // Track event source
+  calendarId?: string; // Track which calendar this came from
+  calendarName?: string; // Human-readable calendar name
+  color?: string; // Hex color code for the calendar
 };
 
 function startOfWeek(date: Date) {
@@ -32,6 +35,52 @@ function isSameDay(a: Date, b: Date) {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+function parseISO(iso: string): Date {
+  // Parse ISO string handling all formats:
+  // - Date-only: YYYY-MM-DD (all-day event)
+  // - DateTime UTC: YYYY-MM-DDTHH:mm:ssZ
+  // - DateTime with timezone: YYYY-MM-DDTHH:mm:ss±HH:mm
+  
+  const parts = iso.split("T");
+  const dateParts = parts[0].split("-");
+  const year = parseInt(dateParts[0], 10);
+  const month = parseInt(dateParts[1], 10) - 1;
+  const day = parseInt(dateParts[2], 10);
+  
+  if (parts.length === 1) {
+    // Date-only string (all-day event), create at midnight local time
+    return new Date(year, month, day, 0, 0, 0, 0);
+  }
+  
+  // Has time component - use native Date parsing which handles timezone offsets
+  return new Date(iso);
+}
+
+function eventOccursOnDay(event: EventItem, day: Date): boolean {
+  const startDate = parseISO(event.start);
+  
+  if (!event.end) {
+    // Single day event - check if on same day
+    return isSameDay(startDate, day);
+  }
+  
+  // Multi-day event: check if day falls between start and end
+  const endDate = parseISO(event.end);
+  
+  // For all-day multi-day events (date-only strings), end is exclusive
+  // For timed multi-day events, we still treat end as exclusive (end of that day)
+  const dayStart = new Date(day);
+  dayStart.setHours(0, 0, 0, 0);
+  
+  const dayEnd = new Date(day);
+  dayEnd.setHours(23, 59, 59, 999);
+  
+  // Event occurs on this day if:
+  // - event starts on or before day end AND
+  // - event ends after day start
+  return startDate <= dayEnd && endDate > dayStart;
 }
 
 function fmtDate(d: Date) {
@@ -129,6 +178,15 @@ export default function CalendarModule() {
       // Merge and sort events by start time
       const allEvents = [...googleEvents, ...customEvents].sort((a, b) =>
         a.start.localeCompare(b.start)
+      );
+
+      console.log(
+        "Loaded events:",
+        allEvents.map((e) => ({
+          title: e.title,
+          start: e.start,
+          end: e.end,
+        }))
       );
 
       setEvents(allEvents);
@@ -312,22 +370,41 @@ export default function CalendarModule() {
 
       {view === "day" ? (
         <div className="calendar-day">
-          {events.filter((ev) => isSameDay(new Date(ev.start), cursor))
+          {events.filter((ev) => eventOccursOnDay(ev, cursor))
             .length === 0 ? (
             <div className="empty">No events for this day.</div>
           ) : (
             <ul className="day-list">
               {events
-                .filter((ev) => isSameDay(new Date(ev.start), cursor))
+                .filter((ev) => eventOccursOnDay(ev, cursor))
                 .map((ev) => (
                   <li
                     key={ev.id}
                     className="calendar-event"
                     onClick={() => viewEvent(ev)}
+                    style={{
+                      borderLeftColor: ev.color || "#4285F4",
+                      borderLeftWidth: 4,
+                      borderLeftStyle: "solid",
+                      backgroundColor: ev.color
+                        ? `${ev.color}15`
+                        : "#4285F415",
+                    }}
                   >
                     <div className="time">{fmtTime(ev.start)}</div>
                     <div className="ev-body">
                       <div className="ev-title">{ev.title}</div>
+                      {ev.calendarName && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--muted)",
+                            marginTop: 2,
+                          }}
+                        >
+                          {ev.calendarName}
+                        </div>
+                      )}
                       {ev.location && (
                         <div className="ev-loc">{ev.location}</div>
                       )}
@@ -343,7 +420,7 @@ export default function CalendarModule() {
             {Array.from({ length: 7 }).map((_, i) => {
               const day = addDays(weekStart, i);
               const dayEvents = events.filter((ev) =>
-                isSameDay(new Date(ev.start), day)
+                eventOccursOnDay(ev, day)
               );
               return (
                 <div className="weekday-col" key={i}>
@@ -365,9 +442,27 @@ export default function CalendarModule() {
                           className="week-event"
                           key={ev.id}
                           onClick={() => viewEvent(ev)}
+                          style={{
+                            backgroundColor: ev.color
+                              ? `${ev.color}20`
+                              : "#4285F420",
+                            borderLeftColor: ev.color || "#4285F4",
+                            borderLeftWidth: 3,
+                          }}
                         >
                           <div className="we-time">{fmtTime(ev.start)}</div>
                           <div className="we-title">{ev.title}</div>
+                          {ev.calendarName && (
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "var(--muted)",
+                                marginTop: 2,
+                              }}
+                            >
+                              {ev.calendarName}
+                            </div>
+                          )}
                         </div>
                       ))
                     )}
