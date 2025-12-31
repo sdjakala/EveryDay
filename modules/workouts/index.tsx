@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/router";
 import Modal from "../../components/Modal";
 import Icon from "../../components/Icon";
 
@@ -58,6 +59,7 @@ function playTimerBeep() {
 }
 
 export default function WorkoutsModule() {
+  const router = useRouter();
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
   const [newWorkoutTitle, setNewWorkoutTitle] = useState("");
@@ -550,7 +552,8 @@ export default function WorkoutsModule() {
         // Remove the workout from the list after successful submission
         setWorkouts((prev) => prev.filter((w) => w.id !== workout.id));
         setActiveWorkoutId(null);
-        alert("Workout submitted successfully!");
+        // Redirect to home to view all saved workouts
+        router.push("/");
       } else {
         console.error("Failed to submit workout");
         alert("Failed to submit workout. Please try again.");
@@ -566,9 +569,9 @@ export default function WorkoutsModule() {
   }
 
   return (
-    <div>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", gap: 8 }}>
+    <div style={{ width: "100%", boxSizing: "border-box" }}>
+      <div style={{ marginBottom: 16, width: "100%", boxSizing: "border-box" }}>
+        <div style={{ display: "flex", gap: 8, width: "100%", boxSizing: "border-box" }}>
           <input
             type="text"
             placeholder="New workout..."
@@ -590,19 +593,19 @@ export default function WorkoutsModule() {
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box" }}>
         {workouts.length === 0 ? (
           <div style={{ color: "var(--muted)", fontSize: 14 }}>
             No workouts yet
           </div>
         ) : (
           workouts.map((w) => (
-            <div key={w.id} style={{ marginBottom: 8 }}>
+            <div key={w.id} style={{ marginBottom: 8, width: "100%", boxSizing: "border-box", overflow: "hidden",
+              borderRadius: 6 }}>
               {/* Workout Header */}
               <div
                 onClick={() => setActiveWorkoutId(activeWorkoutId === w.id ? null : w.id)}
                 style={{
-                  width: "100%",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
@@ -634,8 +637,10 @@ export default function WorkoutsModule() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      persistWorkout(w);
-                      setEditingWorkoutId(null);
+                      persistWorkout(w).then(() => {
+                        setEditingWorkoutId(null);
+                        fetchWorkouts();
+                      });
                     }}
                     className="cal-btn"
                     title="Save workout"
@@ -671,14 +676,14 @@ export default function WorkoutsModule() {
 
               {/* Expanded Workout Content */}
               {activeWorkoutId === w.id && (
-                <div style={{ marginTop: 12, paddingLeft: 16 }}>
+                <div style={{ marginTop: 12, paddingLeft: 16, width: "100%", boxSizing: "border-box" }}>
                   {/* Add Lift Form - Only show in edit mode */}
                   {editingWorkoutId === w.id && (
-                    <div style={{ marginBottom: 16, padding: "12px", background: "rgba(255,255,255,0.02)", borderRadius: 6 }}>
+                    <div style={{ marginBottom: 16, padding: "12px", background: "rgba(255,255,255,0.02)", borderRadius: 6, width: "100%", boxSizing: "border-box" }}>
                       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, fontWeight: 500 }}>
                         Add Lift
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box" }}>
                         <input
                           type="text"
                           placeholder="Lift name (e.g., Bench Press)"
@@ -764,14 +769,13 @@ export default function WorkoutsModule() {
                       No lifts added yet
                     </div>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box" }}>
                       {w.lifts.map((lift) => (
-                        <div key={lift.id}>
+                        <div key={lift.id} style={{ width: "100%", boxSizing: "border-box" }}>
                           {/* Lift Header */}
                           <div
                             onClick={() => setExpandedLiftId(expandedLiftId === lift.id ? null : lift.id)}
                             style={{
-                              width: "100%",
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
@@ -838,8 +842,8 @@ export default function WorkoutsModule() {
 
                           {/* Expanded Lift Content - Sets */}
                           {expandedLiftId === lift.id && (
-                            <div style={{ marginTop: 8, paddingLeft: 12 }}>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            <div style={{ marginTop: 8, paddingLeft: 12, width: "100%", boxSizing: "border-box" }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box" }}>
                                 {lift.sets.map((set) => (
                                   <div
                                     key={set.id}
@@ -853,6 +857,8 @@ export default function WorkoutsModule() {
                                       textDecoration: set.completed
                                         ? "line-through"
                                         : "none",
+                                      width: "100%",
+                                      boxSizing: "border-box",
                                     }}
                                   >
                                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
