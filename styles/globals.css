@@ -398,6 +398,8 @@ h1 {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
 }
 .weekday-col {
   background: linear-gradient(
@@ -409,6 +411,8 @@ h1 {
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.02);
   min-height: 100px;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 .weekday-header {
   display: flex;
@@ -432,15 +436,20 @@ h1 {
 .wk-name {
   font-size: 12px;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wk-date {
   font-weight: 700;
   color: #fff;
+  flex-shrink: 0;
 }
 .weekday-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow: hidden;
 }
 .week-event {
   background: rgba(255, 255, 255, 0.02);
@@ -450,20 +459,73 @@ h1 {
   display: flex;
   gap: 8px;
   align-items: center;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 .we-time {
   color: var(--muted);
   font-size: 12px;
   min-width: 48px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .we-title {
   font-weight: 600;
   color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 @media (max-width: 720px) {
   .week-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .weekday-col {
+    min-height: auto;
+  }
+  .week-event {
+    flex-wrap: wrap;
+  }
+  .we-time {
+    min-width: auto
+  }
+  .we-title {
+    white-space: normal;
+    word-break: break-word;
+  }
+}
+
+@media (max-width: 720px) and (orientation: landscape) {
+  .week-grid {
+    grid-template-columns: repeat(2, 2fr);
+    gap: 6px;
+  }
+  .weekday-col {
+    min-height: 120px;
+  }
+  .we-title {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
+@media (min-width: 721px) and (max-width: 1200px) {
+  .week-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1201px) and (max-width: 1600px) {
+  .week-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+@media (min-width: 1601px) {
+  .week-grid {
+    grid-template-columns: repeat(7, 1fr);
   }
 }
 

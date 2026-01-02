@@ -5,7 +5,6 @@ import Link from "next/link";
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [wakeLock, setWakeLock] = useState<any>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -34,14 +33,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   // Wake Lock API to keep screen awake in fullscreen mode
   useEffect(() => {
+    let currentWakeLock: any = null;
+
     const requestWakeLock = async () => {
       if (isFullscreen && "wakeLock" in navigator) {
         try {
-          const lock = await (navigator as any).wakeLock.request("screen");
-          setWakeLock(lock);
+          currentWakeLock = await (navigator as any).wakeLock.request("screen");
           console.log("Wake Lock activated");
 
-          lock.addEventListener("release", () => {
+          currentWakeLock.addEventListener("release", () => {
             console.log("Wake Lock released");
           });
         } catch (err) {
@@ -51,10 +51,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     };
 
     const releaseWakeLock = async () => {
-      if (wakeLock) {
+      if (currentWakeLock) {
         try {
-          await wakeLock.release();
-          setWakeLock(null);
+          await currentWakeLock.release();
+          currentWakeLock = null;
         } catch (err) {
           console.error("Wake Lock release error:", err);
         }
@@ -69,7 +69,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     // Re-request wake lock when page becomes visible again (handles tab switching)
     const handleVisibilityChange = () => {
-      if (isFullscreen && document.visibilityState === "visible") {
+      if (isFullscreen && document.visibilityState === "visible" && !currentWakeLock) {
         requestWakeLock();
       }
     };
@@ -80,7 +80,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       releaseWakeLock();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isFullscreen, wakeLock]);
+  }, [isFullscreen]);
 
   const toggleFullscreen = async () => {
     try {

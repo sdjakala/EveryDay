@@ -398,57 +398,88 @@ export default function WorkoutsModule() {
     }
   }
 
-  function renderHistoryChart(data: { date: string; sets: { weight: number; reps: number }[] }[]) {
+function renderHistoryChart(data: { date: string; sets: { weight: number; reps: number }[] }[]) {
     if (!data || !data.length) return <div style={{ padding: 16 }}>No history for this lift.</div>;
 
-    const margin = { top: 20, right: 20, bottom: 40, left: 40 };
-    const xStep = 100;
-    const width = Math.max(320, data.length * xStep + margin.left + margin.right);
-    const height = 240;
-
-    const allWeights = data.flatMap((d) => d.sets.map((s) => s.weight));
-    const maxWeight = Math.max(...allWeights, 1);
+    const setColors = ["#25f4ee", "#8456ff", "#4caf50", "#ffc107", "#ff6464"];
 
     return (
-      <div style={{ overflowX: "auto" }}>
-        <svg width={width} height={height}>
-          {/* axis lines */}
-          <line x1={margin.left} y1={height - margin.bottom} x2={width - margin.right} y2={height - margin.bottom} stroke="rgba(255,255,255,0.08)" />
-          <line x1={margin.left} y1={margin.top} x2={margin.left} y2={height - margin.bottom} stroke="rgba(255,255,255,0.08)" />
-
-          {/* points */}
-          {data.map((d, i) => {
-            const cx = margin.left + i * xStep + xStep / 2;
-            return (
-              <g key={i}>
-                {/* date label */}
-                <text x={cx} y={height - margin.bottom + 18} textAnchor="middle" fontSize={11} fill="var(--muted)">
-                  {new Date(d.date).toLocaleDateString()}
-                </text>
-                {d.sets.map((s, j) => {
-                  const y = margin.top + (1 - s.weight / maxWeight) * (height - margin.top - margin.bottom);
-                  const colors = ["#25f4ee", "#8456ff", "#4caf50", "#ffc107", "#ff6464"];
-                  const color = colors[j % colors.length];
-                  return (
-                    <g key={j}>
-                      <circle cx={cx} cy={y} r={6} fill={color} stroke="#071018" />
-                      <text x={cx} y={y - 10} textAnchor="middle" fontSize={11} fill="#fff">
-                        {s.weight}lb
-                      </text>
-                      <text x={cx} y={y + 18} textAnchor="middle" fontSize={10} fill="var(--muted)">
-                        {s.reps} reps
-                      </text>
-                    </g>
-                  );
-                })}
-              </g>
-            );
-          })}
-        </svg>
+      <div style={{ overflowY: "auto", height: "50vh", maxHeight: "80vh" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr
+              style={{
+                borderBottom: "1px solid rgba(255,255,255,0.1)",
+                position: "sticky",
+                top: 0,
+                background: "rgba(0,0,0,0.8)",
+                zIndex: 1,
+              }}
+            >
+              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600, color: "var(--muted)"}}>Date</th>
+              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600, color: "var(--muted)"}}>Sets</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((d, i) => (
+              <tr key={i}
+                style={{
+                  borderBottom: "1px solid rgba(255,255,255,0.05)",
+                }}>
+                <td
+                  style={{ padding: "12px", verticalAlign: "top", color: "#fff", whiteSpace: "nowrap" }}>
+                  {new Date(d.date).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </td>
+                <td style={{ padding: "12px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      alignItems: "center",
+                    }}
+                  >
+                    {d.sets.map((s, j) => {
+                      const color = setColors[j % setColors.length];
+                      return (
+                        <div
+                          key={j}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "4px 8px",
+                            background: `${color}15`,
+                            border: `1px solid ${color}40`,
+                            borderRadius: 4,
+                            fontSize: 11,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <span style={{ color: color, fontWeight: 700, fontSize: 10 }}>
+                            {j + 1}
+                          </span>
+                          <div
+                            
+                          />
+                          <span style={{ color: color, fontWeight: 600 }}>{s.weight} lbs</span>
+                          <span style={{ color: "var(--muted)", fontSize: 11 }}> x {s.reps}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
-  }
-
+}
   async function deleteLift(workoutId: string, liftId: string) {
     setWorkouts((prev) =>
       prev.map((w) =>
@@ -513,6 +544,42 @@ export default function WorkoutsModule() {
     }
   }
 
+  async function moveLiftUp(workoutId: string, liftId: string) {
+    const workout = workouts.find((w) => w.id === workoutId);
+    if(!workout) return;
+
+    const liftIndex = workout.lifts.findIndex((l) => l.id === liftId);
+    if (liftIndex <= 0) return; // Already at the top
+
+    const newLifts = [...workout.lifts];
+    [newLifts[liftIndex - 1], newLifts[liftIndex]] = [newLifts[liftIndex], newLifts[liftIndex - 1]];
+
+    setWorkouts((prev) =>
+      prev.map((w) => (w.id === workoutId ? { ...w, lifts: newLifts } : w)
+    ));
+
+    const updated = { ...workout, lifts: newLifts };
+    await persistWorkout(updated);
+  }
+
+  async function moveLiftDown(workoutId: string, liftId: string) {
+    const workout = workouts.find((w) => w.id === workoutId);
+    if(!workout) return;
+
+    const liftIndex = workout.lifts.findIndex((l) => l.id === liftId);
+    if (liftIndex === -1 || liftIndex >= workout.lifts.length - 1) return; // Already at the bottom
+    
+    const newLifts = [...workout.lifts];
+    [newLifts[liftIndex + 1], newLifts[liftIndex]] = [newLifts[liftIndex], newLifts[liftIndex + 1]];
+
+    setWorkouts((prev) =>
+      prev.map((w) => (w.id === workoutId ? { ...w, lifts: newLifts } : w)
+    ));
+
+    const updated = { ...workout, lifts: newLifts };
+    await persistWorkout(updated);
+  }
+
   function isWorkoutComplete(workout: Workout): boolean {
     // Check if all lifts have at least one set, and all sets are completed
     if (workout.lifts.length === 0) return false;
@@ -549,8 +616,38 @@ export default function WorkoutsModule() {
       });
 
       if (res.ok) {
-        // Remove the workout from the list after successful submission
-        setWorkouts((prev) => prev.filter((w) => w.id !== workout.id));
+
+        // Reset all checkmarks
+        setWorkouts((prev) => 
+          prev.map((w) =>
+            w.id === workout.id
+              ? {
+                ...w,
+                lifts: w.lifts.map((lift) => ({
+                  ...lift,
+                  sets: lift.sets.map((set) => ({ 
+                    ...set, 
+                    completed: false
+                  })),
+                })),
+              }
+              : w
+            )
+        );        
+        
+        const updatedWorkout = {
+          ...workout,
+          lifts: workout.lifts.map((lift) => ({
+            ...lift,
+            sets: lift.sets.map((set) => ({
+              ...set,
+              completed: false,
+            })),
+          })),
+        };
+        // Persist the reset state
+        await persistWorkout(updatedWorkout);
+
         setActiveWorkoutId(null);
         // Redirect to home to view all saved workouts
         router.push("/");
@@ -733,7 +830,7 @@ export default function WorkoutsModule() {
                             type="range"
                             min="0"
                             max="500"
-                            step="5"
+                            step="2.5"
                             value={newLiftWeight}
                             onChange={(e) => setNewLiftWeight(parseInt(e.target.value))}
                             style={{ width: "100%" }}
@@ -814,29 +911,81 @@ export default function WorkoutsModule() {
                               <span style={{ fontSize: 12, marginLeft: 6 }}>History</span>
                             </button>
                             {editingWorkoutId === w.id && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteLift(w.id, lift.id);
-                                }}
-                                style={{
-                                  width: 24,
-                                  height: 24,
-                                  padding: 0,
-                                  background: "rgba(255, 100, 100, 0.2)",
-                                  border: "1px solid rgba(255, 100, 100, 0.5)",
-                                  borderRadius: 3,
-                                  color: "#ff6464",
-                                  cursor: "pointer",
-                                  fontSize: 12,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                                title="Delete lift"
-                              >
-                                🗑
-                              </button>
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveLiftUp(w.id, lift.id);
+                                  }}
+                                  disabled={w.lifts.indexOf(lift) === 0}
+                                  style={{
+                                    width: 24,
+                                    height: 24,
+                                    padding: 0,
+                                    background: w.lifts.indexOf(lift) === 0 ? "rgba(255,255,255,0.05)" : "rgba(37, 244, 238, 0.2)",
+                                    border: w.lifts.indexOf(lift) === 0 ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(37, 244, 238, 0.5)",
+                                    borderRadius: 3,
+                                    color: w.lifts.indexOf(lift) === 0 ? "rgba(255,255,255,0.3)" : "#25f4ee",
+                                    cursor: w.lifts.indexOf(lift) === 0 ? "not-allowed" : "pointer",
+                                    fontSize: 12, 
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    marginRight: 4,
+                                  }}
+                                  title="Move Up"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveLiftDown(w.id, lift.id);
+                                  }}
+                                  disabled={w.lifts.indexOf(lift) === w.lifts.length - 1}
+                                  style={{  
+                                    width: 24,
+                                    height: 24,
+                                    padding: 0,
+                                    background: w.lifts.indexOf(lift) === w.lifts.length - 1 ? "rgba(255,255,255,0.05)" : "rgba(37, 244, 238, 0.2)",
+                                    border: w.lifts.indexOf(lift) === w.lifts.length - 1 ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(37, 244, 238, 0.5)",
+                                    borderRadius: 3,  
+                                    color: w.lifts.indexOf(lift) === w.lifts.length - 1 ? "rgba(255,255,255,0.3)" : "#25f4ee",
+                                    cursor: w.lifts.indexOf(lift) === w.lifts.length - 1 ? "not-allowed" : "pointer",
+                                    fontSize: 12,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    marginRight: 8,
+                                  }}
+                                  title="Move Down"
+                                >
+                                  ↓
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteLift(w.id, lift.id);
+                                  }}
+                                  style={{
+                                    width: 24,
+                                    height: 24,
+                                    padding: 0,
+                                    background: "rgba(255, 100, 100, 0.2)",
+                                    border: "1px solid rgba(255, 100, 100, 0.5)",
+                                    borderRadius: 3,
+                                    color: "#ff6464",
+                                    cursor: "pointer",
+                                    fontSize: 12,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                  title="Delete lift"
+                                >
+                                  🗑
+                                </button>        
+                              </>                                                   
                             )}
                           </div>
 
@@ -1193,10 +1342,7 @@ export default function WorkoutsModule() {
                 </button>
                 <button className="icon-btn" onClick={() => setHistoryOpen(false)} aria-label="Close history">✕</button>
               </div>
-            </div>
-            <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 12 }}>
-              Showing past workouts for this lift. Circles show weight (lb); text shows reps. Chart scrolls horizontally if there are many records.
-            </div>
+            </div>            
             {renderHistoryChart(historyData)}
         </div>
       </Modal>
