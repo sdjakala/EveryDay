@@ -4,14 +4,18 @@ import "../styles/globals.css";
 import Layout from "../components/Layout";
 
 function registerServiceWorker() {
-  // Disabled during development to avoid Fast Refresh loops and SW caching issues.
-  // Enable in production by checking: process.env.NODE_ENV === 'production'
-  // eslint-disable-next-line no-constant-condition
-  if (false && "serviceWorker" in navigator) {
-    navigator.serviceWorker
-      .register(`/sw.js?t=${Date.now()}`)
-      .then(() => console.log("Service Worker registered"))
-      .catch((err) => console.warn("SW registration failed", err));
+  // Register the service worker for PWA functionality
+  if(typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then(registration => {
+          console.log('Service Worker registered with scope:', registration.scope);
+        })
+        .catch(error => {
+          console.error('Service Worker registration failed:', error);
+        });
+    });
   }
 }
 
