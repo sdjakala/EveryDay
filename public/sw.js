@@ -30,6 +30,20 @@ self.addEventListener("activate", (event) => {
 
 // Fetch event - serve cached assets if available
 self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+
+  //Never cache API requests
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Only cache GET requests for non-API resources
+  if (event.request.method !== "GET") {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       // Cache hit - return the response from the cached version
@@ -54,12 +68,10 @@ self.addEventListener("fetch", (event) => {
           // Clone the response
           const responseToCache = response.clone();
 
-          // Cache GET requests only
-          if (event.request.method === "GET") {
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
+          // Cachge the response
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
 
           return response;
         })
