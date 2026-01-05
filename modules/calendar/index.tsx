@@ -119,6 +119,27 @@ export default function CalendarModule() {
     fetchAllEvents();
   }, []);
 
+  React.useEffect(() => {
+    function handleScheduleRecipe(event: any) {
+      const { title, date, time } = event.detail;
+      
+      // Pre-fill the form
+      setFormTitle(title);
+      setFormDate(date);
+      setFormTime(time);
+      setEditingEvent(null);
+      
+      // Open the modal
+      setModalOpen(true);
+    }
+
+    window.addEventListener("schedule-recipe-event", handleScheduleRecipe);
+    
+    return () => {
+      window.removeEventListener("schedule-recipe-event", handleScheduleRecipe);
+    };
+  }, []);
+
   async function fetchAllEvents() {
     try {
       setLoading(true);

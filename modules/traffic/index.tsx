@@ -66,6 +66,7 @@ export default function TrafficModule() {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLocationManager, setShowLocationManager] = useState(false);
 
   useEffect(() => {
     fetchLocations();
@@ -462,7 +463,7 @@ export default function TrafficModule() {
                 From
               </label>
               <select
-                className="grocery-select"
+                className="traffic-select"
                 value={selectedOrigin}
                 onChange={(e) => setSelectedOrigin(e.target.value)}
                 style={{ width: "100%" }}
@@ -488,7 +489,7 @@ export default function TrafficModule() {
                 To
               </label>
               <select
-                className="grocery-select"
+                className="traffic-select"
                 value={selectedDestination}
                 onChange={(e) => setSelectedDestination(e.target.value)}
                 style={{ width: "100%" }}
@@ -577,7 +578,7 @@ export default function TrafficModule() {
                       marginBottom: "0.75rem",
                       border:
                         index === 0
-                          ? "2px solid var(--primary)"
+                          ? "2px solid var(--accent-start)"
                           : "1px solid rgba(255,255,255,0.05)",
                     }}
                   >
@@ -662,6 +663,7 @@ export default function TrafficModule() {
             </div>
           )}
 
+          {/* Collapsible Saved Locations Section */}
           <div
             style={{
               marginTop: "2rem",
@@ -670,53 +672,73 @@ export default function TrafficModule() {
               borderRadius: "8px",
             }}
           >
-            <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem" }}>
-              Saved Locations
-            </h4>
             <div
+              onClick={() => setShowLocationManager(!showLocationManager)}
               style={{
                 display: "flex",
-                flexDirection: "column",
-                gap: "0.5rem",
+                justifyContent: "space-between",
+                alignItems: "center",
+                cursor: "pointer",
+                padding: "0.5rem 0",
               }}
             >
-              {locations.map((loc) => (
+              <h4 style={{ margin: 0, fontSize: "0.95rem" }}>
+                Manage Locations ({locations.length})
+              </h4>
+              <span style={{ fontSize: "18px" }}>
+                {showLocationManager ? "▼" : "▶"}
+              </span>
+            </div>
+
+            {showLocationManager && (
+              <>
                 <div
-                  key={loc.id}
                   style={{
-                    background: "rgba(255,255,255,0.02)",
-                    padding: "0.75rem",
-                    borderRadius: "6px",
                     display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                    flexDirection: "column",
+                    gap: "0.5rem",
+                    marginTop: "0.75rem",
                   }}
                 >
-                  <div>
-                    <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>
-                      {loc.name}
-                    </div>
+                  {locations.map((loc) => (
                     <div
+                      key={loc.id}
                       style={{
-                        fontSize: "0.8rem",
-                        color: "var(--muted)",
-                        marginTop: "0.15rem",
+                        background: "rgba(255,255,255,0.02)",
+                        padding: "0.75rem",
+                        borderRadius: "6px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
                       }}
                     >
-                      {loc.address}
+                      <div>
+                        <div style={{ fontWeight: "600", fontSize: "0.9rem" }}>
+                          {loc.name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "0.8rem",
+                            color: "var(--muted)",
+                            marginTop: "0.15rem",
+                          }}
+                        >
+                          {loc.address}
+                        </div>
+                      </div>
+                      <button
+                        className="task-action-btn"
+                        onClick={() => deleteLocation(loc.id)}
+                        title="Delete"
+                      >
+                        <Icon name="trash" />
+                      </button>
                     </div>
-                  </div>
-                  <button
-                    className="task-action-btn"
-                    onClick={() => deleteLocation(loc.id)}
-                    title="Delete"
-                  >
-                    <Icon name="trash" />
-                  </button>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <LocationForm onAdd={addLocation} />
+                <LocationForm onAdd={addLocation} />
+              </>
+            )}
           </div>
         </div>
       )}

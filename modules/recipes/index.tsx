@@ -189,6 +189,169 @@ export default function RecipesModule() {
     }
   }
 
+  async function togglePlanned(recipeId: string) {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+
+    const newPlannedStatus = !recipe.planned;
+
+    // Optimistically update UI
+    setRecipes((list) =>
+      list.map((x) =>
+        x.id === recipeId ? { ...x, planned: newPlannedStatus } : x
+      )
+    );
+
+    // Persist to server
+    try {
+      await apiUpdateRecipe(recipeId, { planned: newPlannedStatus });
+    } catch (e) {
+      console.error("Failed to update planned status:", e);
+      // Revert on error
+      setRecipes((list) =>
+        list.map((x) =>
+          x.id === recipeId ? { ...x, planned: recipe.planned } : x
+        )
+      );
+      alert("Failed to update planned status. Please try again.");
+    }
+  }
+
+  function scheduleRecipeOnCalendar(recipeId: string) {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+
+    // Get today's date at 6 PM
+    const today = new Date();
+    today.setHours(18, 0, 0, 0);
+
+    // Create event data
+    const eventData = {
+      title: recipe.title,
+      date: today.toISOString().slice(0, 10),
+      time: "18:00",
+    };
+
+    // Dispatch custom event to be picked up by calendar module
+    window.dispatchEvent(
+      new CustomEvent("schedule-recipe-event", {
+        detail: eventData,
+      })
+    );    
+  }
+
+  function RecipePlanMenu({ recipe }: { recipe: Recipe }) {
+    const [showMenu, setShowMenu] = useState(false);
+
+    return (
+      <div style={{ position: "relative" }}>
+        <button
+          className={`toggle-btn small ${recipe.planned ? "active" : ""}`}
+          title="Plan this recipe"
+          aria-pressed={!!recipe.planned}
+          onClick={() => setShowMenu(!showMenu)}
+        >
+          <span className="icon">
+            <Icon name="heart" />
+          </span>
+        </button>
+
+        {showMenu && (
+          <>
+            {/* Backdrop to close menu */}
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 10,
+              }}
+              onClick={() => setShowMenu(false)}
+            />
+            
+            {/* Menu dropdown */}
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                marginTop: 4,
+                background: "var(--card)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 8,
+                padding: 8,
+                minWidth: 200,
+                zIndex: 20,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => {
+                  togglePlanned(recipe.id);
+                  setShowMenu(false);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  background: "transparent",
+                  border: "none",
+                  color: "#fff",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  borderRadius: 4,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = "rgba(255,255,255,0.1)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "transparent")
+                }
+              >
+                <Icon name="heart" size={16} />
+                <span>
+                  {recipe.planned ? "Remove from planned" : "Mark as planned"}
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  scheduleRecipeOnCalendar(recipe.id);
+                  setShowMenu(false);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  background: "transparent",
+                  border: "none",
+                  color: "#fff",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  borderRadius: 4,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 4,
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = "rgba(255,255,255,0.1)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "transparent")
+                }
+              >
+                <Icon name="calendar" size={16} />
+                <span>Schedule on calendar</span>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   function addIngredient() {
     const txt = newIngredient.trim();
     if (!txt) return;
@@ -893,27 +1056,7 @@ export default function RecipesModule() {
                             alignItems: "center",
                           }}
                         >
-                          <button
-                            className={`toggle-btn ${r.planned ? "active" : ""}`}
-                            title={r.planned ? "Planned" : "Mark planned"}
-                            aria-pressed={!!r.planned}
-                            onClick={() =>
-                              setRecipes((list) =>
-                                list.map((x) =>
-                                  x.id === r.id
-                                    ? { ...x, planned: !x.planned }
-                                    : x
-                                )
-                              )
-                            }
-                          >
-                            <span className="icon">
-                              <Icon name="heart" />
-                            </span>
-                            <span style={{ fontSize: 12 }}>
-                              {r.planned ? "Planned" : "Plan"}
-                            </span>
-                          </button>
+                          <RecipePlanMenu recipe={r} />
                           <button
                             className="task-action-btn"
                             onClick={() => startEdit(r)}
@@ -1141,24 +1284,7 @@ export default function RecipesModule() {
                           alignItems: "center",
                         }}
                       >
-                        <button
-                          className={`toggle-btn small ${r.planned ? "active" : ""}`}
-                          title={r.planned ? "Planned" : "Mark planned"}
-                          aria-pressed={!!r.planned}
-                          onClick={() =>
-                            setRecipes((list) =>
-                              list.map((x) =>
-                                x.id === r.id
-                                  ? { ...x, planned: !x.planned }
-                                  : x
-                              )
-                            )
-                          }
-                        >
-                          <span className="icon">
-                            <Icon name="heart" />
-                          </span>
-                        </button>
+                        <RecipePlanMenu recipe={r} />
                         <button
                           className="task-action-btn"
                           onClick={() => startEdit(r)}
