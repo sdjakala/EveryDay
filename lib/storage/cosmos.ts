@@ -36,6 +36,18 @@ type Workout = {
   userId?: string;
 };
 
+type WeatherLocation = {
+  id: string;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+  formattedAddress: string;
+  createdAt?: string;
+  updatedAt?: string;
+  userId?: string;
+};
+
 import { CosmosClient } from "@azure/cosmos";
 
 type Ingredient = { id: string; title: string; section: string };
@@ -173,6 +185,8 @@ const favoriteRoutesContainerId =
   process.env.COSMOS_CONTAINER_FAVORITE_ROUTES || "FavoriteRoutes";
 const trafficAlertsContainerId =
   process.env.COSMOS_CONTAINER_TRAFFIC_ALERTS || "TrafficAlerts";
+const weatherLocationsContainerId =
+  process.env.COSMOS_CONTAINER_WEATHER_LOCATIONS || "WeatherLocations";
 
 let client: CosmosClient | null = null;
 
@@ -1625,6 +1639,97 @@ const cosmosAdapter = {
       throw e;
     }
   },
+
+  // Weather Locations
+  async getWeatherLocations(userId?: string): Promise<WeatherLocation[]> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(weatherLocationsContainerId);
+
+    if (!userId) {
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.createdAt DESC")
+        .fetchAll();
+      return resources as WeatherLocation[];
+    }
+
+    const query = {
+      query: `SELECT * FROM c WHERE c.userId = @userId ORDER BY c.createdAt DESC`,
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as WeatherLocation[];
+  },
+
+  async getWeatherLocation(
+    id: string,
+    userId?: string
+  ): Promise<WeatherLocation | null> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(weatherLocationsContainerId);
+    try {
+      const { resource } = await container.item(id, id).read<WeatherLocation>();
+      if (!resource) return null;
+
+      if (userId && resource.userId !== userId) {
+        return null;
+      }
+
+      return resource || null;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async createWeatherLocation(
+    payload: Omit<WeatherLocation, "id" | "createdAt" | "updatedAt">,
+    userId?: string
+  ): Promise<WeatherLocation> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(weatherLocationsContainerId);
+    const now = new Date().toISOString();
+    const location: WeatherLocation = {
+      id: uid(),
+      city: payload.city,
+      state: payload.state,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      formattedAddress: payload.formattedAddress,
+      createdAt: now,
+      updatedAt: now,
+      userId: userId,
+    };
+    const { resource } = await container.items.create(location);
+    return resource as WeatherLocation;
+  },
+
+  async deleteWeatherLocation(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(weatherLocationsContainerId);
+    try {
+      const existing = await this.getWeatherLocation(id, userId);
+      if (!existing) return false;
+
+      if (userId && existing.userId !== userId) {
+        return false;
+      }
+
+      await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
 };
 
 export default cosmosAdapter;

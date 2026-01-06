@@ -128,6 +128,12 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
     listWorkoutResults: () => adapter.listWorkoutResults(userId),
     deleteWorkoutResult: (id: string) => adapter.deleteWorkoutResult ? adapter.deleteWorkoutResult(id, userId) : Promise.resolve(false),
     clearWorkoutResults: (liftName?: string) => adapter.clearWorkoutResults ? adapter.clearWorkoutResults(liftName, userId) : Promise.resolve(0),
+    getWeatherLocations: () => adapter.getWeatherLocations(userId),
+    getWeatherLocation: (id: string) => adapter.getWeatherLocation(id, userId),
+    createWeatherLocation: (payload: any) =>
+      adapter.createWeatherLocation(payload, userId),
+    deleteWeatherLocation: (id: string) =>
+      adapter.deleteWeatherLocation(id, userId),
   };
 }
 

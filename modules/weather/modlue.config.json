@@ -1,0 +1,6 @@
+{
+  "name": "weather",
+  "description": "Current weather conditions",
+  "enabled": true,
+  "minRank": 0
+}

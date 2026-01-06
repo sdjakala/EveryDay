@@ -93,6 +93,16 @@ type TrafficAlert = {
   timestamp: string;
   dismissed?: boolean;
 };
+type WeatherLocation = {
+  id: string;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+  formattedAddress: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const RECIPES_FILE = path.join(DATA_DIR, "backend_recipes.json");
@@ -111,6 +121,10 @@ const FAVORITE_ROUTES_FILE = path.join(
   "backend_favorite_routes.json"
 );
 const TRAFFIC_ALERTS_FILE = path.join(DATA_DIR, "backend_traffic_alerts.json");
+const WEATHER_LOCATIONS_FILE = path.join(
+  DATA_DIR,
+  "backend_weather_locations.json"
+);
 
 function ensureDataDir() {
   try {
@@ -170,6 +184,10 @@ let newsArticlesCache: NewsArticleCache[] = readJson<NewsArticleCache[]>(
   []
 );
 let workoutResults: any[] = readJson<any[]>(WORKOUT_RESULTS_FILE, []);
+let weatherLocations: WeatherLocation[] = readJson<WeatherLocation[]>(
+  WEATHER_LOCATIONS_FILE,
+  []
+);
 
 function persist() {
   if (!SHOULD_PERSIST) return;
@@ -695,6 +713,43 @@ const memoryAdapter = {
     writeJson(TRAFFIC_ALERTS_FILE, []);
     return count;
   },
+
+  // Weather Locations
+  async getWeatherLocations(_userId?: string): Promise<WeatherLocation[]> {
+    return weatherLocations;
+  },
+
+  async getWeatherLocation(id: string, _userId?: string): Promise<WeatherLocation | null> {
+    return weatherLocations.find((loc) => loc.id === id) || null;
+  },
+
+  async createWeatherLocation(
+    payload: Omit<WeatherLocation, "id" | "createdAt" | "updatedAt">,
+    _userId?: string
+  ): Promise<WeatherLocation> {
+    const now = new Date().toISOString();
+    const location: WeatherLocation = {
+      id: uid(),
+      city: payload.city,
+      state: payload.state,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      formattedAddress: payload.formattedAddress,
+      createdAt: now,
+      updatedAt: now,
+    };
+    weatherLocations = [location, ...weatherLocations];
+    writeJson(WEATHER_LOCATIONS_FILE, weatherLocations);
+    return location;
+  },
+
+  async deleteWeatherLocation(id: string, _userId?: string): Promise<boolean> {
+    const prev = weatherLocations.length;
+    weatherLocations = weatherLocations.filter((loc) => loc.id !== id);
+    writeJson(WEATHER_LOCATIONS_FILE, weatherLocations);
+    return prev !== weatherLocations.length;
+  },
+
 };
 
 export default memoryAdapter;
