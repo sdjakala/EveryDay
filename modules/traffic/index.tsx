@@ -504,7 +504,7 @@ export default function TrafficModule() {
             </div>
           </div>
 
-          <div style={{ marginBottom: "1rem" }}>
+          {/* <div style={{ marginBottom: "1rem" }}>
             <label
               style={{
                 fontSize: "0.85rem",
@@ -537,7 +537,7 @@ export default function TrafficModule() {
                 {useArrivalTime ? "🎯" : "🚀"}
               </button>
             </div>
-          </div>
+          </div> */}
 
           <button
             className="task-add-btn"

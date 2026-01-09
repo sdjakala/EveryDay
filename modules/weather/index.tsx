@@ -108,8 +108,70 @@ type WeatherData = {
   };
 };
 
+type AstronomyData = {
+  location: {
+    latitude: string;
+    longitude: string;
+    country_name: string;
+    state_prov: string;
+    city: string;
+    locality: string;
+    elevation: string;
+  };
+  astronomy: {
+    date: string;
+    current_time: string;
+    mid_night: string;
+    night_end: string;
+    morning: {
+      astronomical_twilight_begin: string;
+      astronomical_twilight_end: string;
+      nautical_twilight_begin: string;
+      nautical_twilight_end: string;
+      civil_twilight_begin: string;
+      civil_twilight_end: string;
+      blue_hour_begin: string;
+      blue_hour_end: string;
+      golden_hour_begin: string;
+      golden_hour_end: string;
+    };
+    sunrise: string;
+    sunset: string;
+    evening: {
+      golden_hour_begin: string;
+      golden_hour_end: string;
+      blue_hour_begin: string;
+      blue_hour_end: string;
+      civil_twilight_begin: string;
+      civil_twilight_end: string;
+      nautical_twilight_begin: string;
+      nautical_twilight_end: string;
+      astronomical_twilight_begin: string;
+      astronomical_twilight_end: string;
+    };
+    night_begin: string;
+    sun_status: string;
+    solar_noon: string;
+    day_length: string;
+    sun_altitude: number;
+    sun_distance: number;
+    sun_azimuth: number;
+    moon_phase: string;
+    moonrise: string;
+    moonset: string;
+    moon_status: string;
+    moon_altitude: number;
+    moon_distance: number;
+    moon_azimuth: number;
+    moon_parallactic_angle: number;
+    moon_illumination_percentage: string;
+    moon_angle: number;
+  };
+};
+
 export default function WeatherModule() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [astronomy, setAstronomy] = useState<AstronomyData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
@@ -193,17 +255,28 @@ export default function WeatherModule() {
         longitude = location.longitude;
       }
 
-      const res = await fetch(
-        `/api/weather/current?latitude=${latitude}&longitude=${longitude}`
-      );
+      // Fetch both weather and astronomy data in parallel
+      const [weatherRes, astronomyRes] = await Promise.all([
+        fetch(`/api/weather/current?latitude=${latitude}&longitude=${longitude}`),
+        fetch(`/api/weather/astronomy?latitude=${latitude}&longitude=${longitude}`)
+      ]);
 
-      if (!res.ok) {
-        const errorData = await res.json();
+      if (!weatherRes.ok) {
+        const errorData = await weatherRes.json();
         throw new Error(errorData.error || "Failed to fetch weather");
       }
 
-      const data = await res.json();
-      setWeather(data);
+      const weatherData = await weatherRes.json();
+      setWeather(weatherData);
+
+      // Astronomy data is optional - don't fail if it's unavailable
+      if (astronomyRes.ok) {
+        const astronomyData = await astronomyRes.json();
+        setAstronomy(astronomyData);
+      } else {
+        console.warn("Failed to fetch astronomy data");
+        setAstronomy(null);
+      }
     } catch (e: any) {
       console.error("Failed to fetch weather:", e);
       setError(e.message || "Failed to load weather data");
@@ -284,6 +357,17 @@ export default function WeatherModule() {
       minute: "2-digit",
     });
   }
+
+  function to12Hour(time24: string) {
+    const [hourStr, minute] = time24.split(":");
+    let hour = parseInt(hourStr, 10);
+
+    const ampm = hour >= 12 ? "PM" : "AM";
+    hour = hour % 12 || 12; // converts 0 → 12, 13 → 1, etc.
+
+    return `${hour}:${minute} ${ampm}`;
+  }
+
 
   function getLocationName(): string {
     if (selectedLocationId === "current") {
@@ -449,15 +533,52 @@ export default function WeatherModule() {
 
       {/* Loading state */}
       {loading && (
-        <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>
-          <p>Loading weather data...</p>
+        <div style={{ padding: "2rem", textAlign: "center" }}>
+          <div style={{ color: "var(--muted)", marginBottom: "1rem" }}>
+            <p>Loading weather data...</p>
+          </div>
+          {selectedLocationId === "current" && (
+            <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+              <p>If prompted, please allow location access.</p>
+              <p style={{ marginTop: "0.5rem" }}>
+                On mobile, check your browser settings if the prompt doesn't appear.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
       {/* No weather data state */}
       {!loading && !weather && (
         <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>
-          <p>Select a location and click refresh to view weather</p>
+          <p style={{ marginBottom: "1rem" }}>
+            {selectedLocationId === "current" 
+              ? "Click refresh to get weather for your current location"
+              : "Click refresh to view weather"}
+          </p>
+          {selectedLocationId === "current" && (
+            <div style={{ 
+              fontSize: "0.85rem", 
+              padding: "1rem", 
+              background: "rgba(255,255,255,0.02)", 
+              borderRadius: "8px",
+              marginTop: "1rem"
+            }}>
+              <p style={{ marginBottom: "0.5rem", fontWeight: "600" }}>
+                📱 Location Access Required
+              </p>
+              <p style={{ marginBottom: "0.5rem" }}>
+                This app needs access to your device location to show local weather.
+              </p>
+              <p style={{ fontSize: "0.8rem", marginTop: "0.75rem" }}>
+                <strong>On Mobile:</strong> If the permission prompt doesn't appear, you may need to enable location access in your browser settings:
+              </p>
+              <ul style={{ textAlign: "left", fontSize: "0.8rem", marginTop: "0.5rem", paddingLeft: "1.5rem" }}>
+                <li>Safari (iOS): Settings → Safari → Location → Allow</li>
+                <li>Chrome (Android): Settings → Site Settings → Location → Allow</li>
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -483,6 +604,7 @@ export default function WeatherModule() {
           <div
             style={{
               display: "flex",
+              flexWrap: "wrap",
               gap: "1.5rem",
               alignItems: "center",
               padding: "1.5rem",
@@ -755,6 +877,7 @@ export default function WeatherModule() {
               background: "rgba(255,255,255,0.02)",
               padding: "1rem",
               borderRadius: "8px",
+              marginBottom: "1rem",
             }}
           >
             <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem" }}>
@@ -780,6 +903,334 @@ export default function WeatherModule() {
               </div>
             </div>
           </div>
+
+          {/* Astronomy Data */}
+          {astronomy && (
+            <>
+              {/* Sun Information */}
+              <div
+                style={{
+                  background: "rgba(255,255,255,0.02)",
+                  padding: "1rem",
+                  borderRadius: "8px",
+                  marginBottom: "1rem",
+                }}
+              >
+                <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem" }}>
+                  ☀️ Sun Information
+                </h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                    gap: "1rem",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Sunrise
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.sunrise)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Sunset
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.sunset)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Day Length
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {astronomy.astronomy.day_length}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Solar Noon
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.solar_noon)}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                    gap: "1rem",
+                    marginTop: "1rem",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Altitude
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {astronomy.astronomy.sun_altitude.toFixed(2)}°
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Azimuth
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {astronomy.astronomy.sun_azimuth.toFixed(2)}°
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Distance
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {(astronomy.astronomy.sun_distance / 1000000).toFixed(2)}M km
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Golden Hour & Blue Hour */}
+              <div
+                style={{
+                  background: "rgba(255,255,255,0.02)",
+                  padding: "1rem",
+                  borderRadius: "8px",
+                  marginBottom: "1rem",
+                }}
+              >
+                <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem" }}>
+                  🌅 Golden & Blue Hours
+                </h4>
+                <div style={{ marginBottom: "1rem" }}>
+                  <div style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "0.5rem" }}>
+                    Morning
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                        Golden Hour
+                      </div>
+                      <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                        {to12Hour(astronomy.astronomy.morning.golden_hour_begin)} - {to12Hour(astronomy.astronomy.morning.golden_hour_end)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                        Blue Hour
+                      </div>
+                      <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                        {to12Hour(astronomy.astronomy.morning.blue_hour_begin)} - {to12Hour(astronomy.astronomy.morning.blue_hour_end)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.85rem", fontWeight: "600", marginBottom: "0.5rem" }}>
+                    Evening
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                        Golden Hour
+                      </div>
+                      <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                        {to12Hour(astronomy.astronomy.evening.golden_hour_begin)} - {to12Hour(astronomy.astronomy.evening.golden_hour_end)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                        Blue Hour
+                      </div>
+                      <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                        {to12Hour(astronomy.astronomy.evening.blue_hour_begin)} - {to12Hour(astronomy.astronomy.evening.blue_hour_end)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Twilight Periods */}
+              <div
+                style={{
+                  background: "rgba(255,255,255,0.02)",
+                  padding: "1rem",
+                  borderRadius: "8px",
+                  marginBottom: "1rem",
+                }}
+              >
+                <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem" }}>
+                  🌆 Twilight Periods
+                </h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: "1rem",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Civil (Morning)
+                    </div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.morning.civil_twilight_begin)} - {to12Hour(astronomy.astronomy.morning.civil_twilight_end)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Civil (Evening)
+                    </div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.evening.civil_twilight_begin)} - {to12Hour(astronomy.astronomy.evening.civil_twilight_end)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Nautical (Morning)
+                    </div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.morning.nautical_twilight_begin)} - {to12Hour(astronomy.astronomy.morning.nautical_twilight_end)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Nautical (Evening)
+                    </div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.evening.nautical_twilight_begin)} - {to12Hour(astronomy.astronomy.evening.nautical_twilight_end)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Astronomical (Morning)
+                    </div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.morning.astronomical_twilight_begin)} - {to12Hour(astronomy.astronomy.morning.astronomical_twilight_end)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Astronomical (Evening)
+                    </div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.evening.astronomical_twilight_begin)} - {to12Hour(astronomy.astronomy.evening.astronomical_twilight_end)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Moon Information */}
+              <div
+                style={{
+                  background: "rgba(255,255,255,0.02)",
+                  padding: "1rem",
+                  borderRadius: "8px",
+                }}
+              >
+                <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem" }}>
+                  🌙 Moon Information
+                </h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                    gap: "1rem",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Phase
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {astronomy.astronomy.moon_phase.replace(/_/g, " ")}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Illumination
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {Math.abs(parseFloat(astronomy.astronomy.moon_illumination_percentage)).toFixed(1)}%
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Moonrise
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.moonrise)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Moonset
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {to12Hour(astronomy.astronomy.moonset)}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                    gap: "1rem",
+                    marginTop: "1rem",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Altitude
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {astronomy.astronomy.moon_altitude.toFixed(2)}°
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Azimuth
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {astronomy.astronomy.moon_azimuth.toFixed(2)}°
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Distance
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {(astronomy.astronomy.moon_distance / 1000).toFixed(0)}k km
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Angle
+                    </div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
+                      {astronomy.astronomy.moon_angle.toFixed(2)}°
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

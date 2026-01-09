@@ -31,25 +31,9 @@ export default async function handler(
       key: GOOGLE_MAPS_API_KEY,
       alternatives: "true", // Get up to 3 alternative routes
       mode: "driving",
+      departure_time: "now"
     };
-
-    // Add departure or arrival time for traffic estimates
-    if (departureTime) {
-      // Convert to Unix timestamp (seconds)
-      const timestamp = Math.floor(
-        new Date(departureTime as string).getTime() / 1000
-      );
-      params.departure_time = timestamp.toString();
-    } else if (arrivalTime) {
-      const timestamp = Math.floor(
-        new Date(arrivalTime as string).getTime() / 1000
-      );
-      params.arrival_time = timestamp.toString();
-    } else {
-      // Default to "now" for current traffic
-      params.departure_time = "now";
-    }
-
+   
     // Call Google Maps Directions API
     const url = `https://maps.googleapis.com/maps/api/directions/json?${new URLSearchParams(params).toString()}`;
 
