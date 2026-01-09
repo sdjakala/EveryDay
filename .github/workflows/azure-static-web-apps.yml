@@ -98,6 +98,7 @@ jobs:
           COSMOS_CONTAINER_FAVORITE_ROUTES: ${{ secrets.COSMOS_CONTAINER_FAVORITE_ROUTES }}
           COSMOS_CONTAINER_TRAFFIC_ALERTS: ${{ secrets.COSMOS_CONTAINER_TRAFFIC_ALERTS }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          IPGEOLOCATION_API_KEY: ${{ secrets.IPGEOLOCATION_API_KEY }}
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
