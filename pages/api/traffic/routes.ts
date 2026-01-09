@@ -12,7 +12,7 @@ export default async function handler(
   }
 
   try {
-    const { origin, destination, departureTime, arrivalTime } = req.query;
+    const { origin, destination } = req.query;
 
     if (!origin || !destination) {
       return res.status(400).json({ error: "Origin and destination required" });
