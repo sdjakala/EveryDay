@@ -44,7 +44,8 @@ function getAdapter(req?: IncomingMessage) {
     if (isAuthenticated(req)) {
       return cosmos;
     }
-    // Fall back to memory for unauthenticated users
+    // ALWAYS fall back to memory for unauthenticated users
+    console.log("Unauthenticated user detected - using memory storage (device-only)");
     return memory;
   }
 

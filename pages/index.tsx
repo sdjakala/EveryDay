@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import Icon from "../components/Icon";
 
 type ModuleMeta = {
@@ -17,18 +18,12 @@ async function fetchModules() {
 
 export default function Dashboard() {
   const [modules, setModules] = useState<ModuleMeta[]>([]);
-  const [user, setUser] = useState<User>({
-    id: "1",
-    name: "Demo User",
-    rank: 1,
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [pinned, setPinned] = useState<string | null>(null);
-  // Drag/touch reordering disabled due to mobile scrolling issues.
-  // The related state is left commented for easy re-enable later.
-  // const [touchDragging, setTouchDragging] = useState<string | null>(null);
-  // const [touchOver, setTouchOver] = useState<string | null>(null);
-  // const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
-  // const [touchCandidate, setTouchCandidate] = useState<string | null>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<string | null>(null);
 
   useEffect(() => {
     // Fetch logged-in user info
@@ -39,16 +34,18 @@ export default function Dashboard() {
       })
       .then((data) => {
         if (data.payload) {
+          setIsAuthenticated(true);
           setUser({
             id: data.payload.sub || "1",
             name: data.payload.name || data.payload.email || "User",
-            rank: 1, // You can add rank to the JWT payload if needed
+            rank: 1,
           });
         }
       })
       .catch((e) => {
-        console.warn("Could not fetch user info:", e);
-        // Keep default demo user on error
+        console.warn("User not authenticated:", e);
+        setIsAuthenticated(false);
+        setUser(null);
       });
 
     // fetch modules then apply saved order (if any)
@@ -58,7 +55,6 @@ export default function Dashboard() {
           const raw = localStorage.getItem("moduleOrder");
           if (raw) {
             const order: string[] = JSON.parse(raw);
-            // build ordered list: ordered names first, then any new modules
             const ordered = order
               .map((name) => data.find((d) => d.name === name))
               .filter(Boolean) as ModuleMeta[];
@@ -67,7 +63,6 @@ export default function Dashboard() {
             return;
           }
         } catch (e) {
-          // fall back to natural order on parse error
           console.warn("Failed to parse module order", e);
         }
         setModules(data);
@@ -83,14 +78,6 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Long-press reorder implementation
-  // We implement a pointer-based long-press so mobile users can reorder
-  // modules without interfering with normal scroll. Long-press threshold
-  // is 350ms. Interactive sub-elements (buttons/links/inputs) are ignored.
-  const longPressTimer = useRef<number | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState<string | null>(null);
-
   useEffect(() => {
     return () => {
       if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
@@ -101,7 +88,6 @@ export default function Dashboard() {
     e: React.PointerEvent<HTMLDivElement>,
     name: string
   ) => {
-    // ignore pointer on controls
     try {
       const tg = e.target as HTMLElement;
       if (
@@ -115,7 +101,6 @@ export default function Dashboard() {
       // ignore traversal errors
     }
 
-    // start long-press timer
     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
     longPressTimer.current = window.setTimeout(() => {
       setDragging(name);
@@ -128,9 +113,7 @@ export default function Dashboard() {
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    // if not dragging, cancel if movement is significant
     if (!dragging) {
-      // if pointer moved before long-press, cancel timer
       if (longPressTimer.current) {
         window.clearTimeout(longPressTimer.current);
         longPressTimer.current = null;
@@ -187,19 +170,49 @@ export default function Dashboard() {
     }
   };
 
+  // Modules allowed for unauthenticated users
+  const allowedForGuests = ["tasks", "calendar", "grocery", "recipes"];
+
   return (
     <div className="container">
       <h1>Dashboard</h1>
-      <p>
-        Welcome, {user.name}
-      </p>
+      {!isAuthenticated ? (
+        <div style={{ 
+          background: "rgba(255,255,255,0.02)", 
+          padding: "1.5rem", 
+          borderRadius: "12px",
+          marginBottom: "1.5rem",
+          border: "1px solid rgba(255,255,255,0.1)"
+        }}>
+          <p style={{ marginBottom: "1rem", fontSize: "1rem" }}>
+            Welcome! You're using the app in <strong>guest mode</strong>.
+          </p>
+          <p style={{ marginBottom: "1rem", color: "var(--muted)", fontSize: "0.9rem" }}>
+            Your data is saved locally on this device only. Sign in to sync across devices and unlock all features.
+          </p>
+          <Link href="/api/auth/login">
+            <button className="btn primary" style={{ marginTop: "0.5rem" }}>
+              Sign In
+            </button>
+          </Link>
+        </div>
+      ) : (
+        <p>Welcome, {user?.name}</p>
+      )}
 
       {pinned
-        ? // if pinned, only show that module
-          modules
+        ? modules
             .filter((m) => m.name === pinned)
             .map((mod) => {
-              if (!mod || !mod.enabled || user.rank < mod.minRank) return null;
+              if (!mod || !mod.enabled) return null;
+              
+              // Check if module is allowed for unauthenticated users
+              if (!isAuthenticated && !allowedForGuests.includes(mod.name)) {
+                return null;
+              }
+              
+              if (user && user.rank < mod.minRank) return null;
+              
               const Component = dynamic(
                 () =>
                   import(`../modules/${mod.name}/index`).then((m) => m.default),
@@ -243,9 +256,15 @@ export default function Dashboard() {
               );
             })
         : modules.map((mod) => {
-            if (!mod.enabled || user.rank < mod.minRank) return null;
+            if (!mod.enabled) return null;
+            
+            // Check if module is allowed for unauthenticated users
+            if (!isAuthenticated && !allowedForGuests.includes(mod.name)) {
+              return null;
+            }
+            
+            if (user && user.rank < mod.minRank) return null;
 
-            // Dynamic import mapping
             const Component = dynamic(
               () =>
                 import(`../modules/${mod.name}/index`).then((m) => m.default),
@@ -257,7 +276,6 @@ export default function Dashboard() {
               }
             );
 
-            // touch/tdragging disabled — handled by dragOver/over variables
             const isDragging = dragging === mod.name;
             const over = dragOver === mod.name;
             return (
