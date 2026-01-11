@@ -175,7 +175,6 @@ export default function Dashboard() {
 
   return (
     <div className="container">
-      <h1>Dashboard</h1>
       {!isAuthenticated ? (
         <div style={{ 
           background: "rgba(255,255,255,0.02)", 
@@ -185,7 +184,7 @@ export default function Dashboard() {
           border: "1px solid rgba(255,255,255,0.1)"
         }}>
           <p style={{ marginBottom: "1rem", fontSize: "1rem" }}>
-            Welcome! You`&apos;`re using the app in <strong>guest mode</strong>.
+            Welcome! You&apos;re using the app in <strong>guest mode</strong>.
           </p>
           <p style={{ marginBottom: "1rem", color: "var(--muted)", fontSize: "0.9rem" }}>
             Your data is saved locally on this device only. Sign in to sync across devices and unlock all features.

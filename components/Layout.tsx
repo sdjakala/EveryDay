@@ -107,12 +107,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           >
             <Icon name={isFullscreen ? "minimize" : "maximize"} />
           </button>
-          <button className="icon-btn" aria-label="Search">
+          {/* <button className="icon-btn" aria-label="Search">
             <Icon name="search" />
           </button>
           <button className="icon-btn" aria-label="Settings">
             <Icon name="settings" />
-          </button>
+          </button> */}
         </div>
       </header>
 
@@ -123,14 +123,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Icon name="home" />
           <span>Home</span>
         </Link>
-        <Link className="nav-btn" href="/news">
+        {/* <Link className="nav-btn" href="/news">
           <Icon name="bell" />
           <span>Feed</span>
-        </Link>
-        <Link className="nav-btn" href="/discover">
+        </Link> */}
+        {/* <Link className="nav-btn" href="/discover">
           <Icon name="discover" />
           <span>Discover</span>
-        </Link>
+        </Link> */}
         <Link className="nav-btn" href="/profile">
           <Icon name="user" />
           <span>Profile</span>

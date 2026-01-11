@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import Layout from "../../components/Layout";
 import Link from "next/link";
 
 type UserProfile = {
@@ -32,17 +31,14 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <Layout>
         <div className="container">
           <p>Loading profile...</p>
         </div>
-      </Layout>
     );
   }
 
   if (error || !user) {
     return (
-      <Layout>
         <div className="container">
           <h1>Profile</h1>
           <p style={{ color: "salmon" }}>{error || "Could not load profile"}</p>
@@ -50,12 +46,10 @@ export default function ProfilePage() {
             <button className="btn primary">Sign In</button>
           </Link>
         </div>
-      </Layout>
     );
   }
 
   return (
-    <Layout>
       <div className="container" style={{ padding: 20 }}>
         <h1>Profile</h1>
         <div
@@ -100,6 +94,5 @@ export default function ProfilePage() {
           </Link>
         </div>
       </div>
-    </Layout>
   );
 }
