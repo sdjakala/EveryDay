@@ -108,190 +108,382 @@ async function apiPushIngredients(id: string): Promise<boolean> {
 
 // Timer Component
 function StepTimerComponent({
-  recipe,
-  stepIndex,
-  onUpdate,
-}: {
-  recipe: Recipe;
-  stepIndex: number;
-  onUpdate: (id: string, updates: Partial<Recipe>) => void;
-}) {
-  const timer = recipe.stepTimers?.[stepIndex];
-  const [showTimerForm, setShowTimerForm] = useState(false);
-  const [timerDuration, setTimerDuration] = useState({ minutes: 0, seconds: 0 });
-  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
+    recipe,
+    stepIndex,
+    onUpdate,
+    editingRecipeId,
+  }: {
+    recipe: Recipe;
+    stepIndex: number;
+    onUpdate: (id: string, updates: Partial<Recipe>) => void;
+    editingRecipeId: string | null;
+  }) {
+    const timer = recipe.stepTimers?.[stepIndex];
+    const [showTimerForm, setShowTimerForm] = useState(false);
+    const [timerDuration, setTimerDuration] = useState({ minutes: 0, seconds: 0 });
+    
+    // Local running timer state - THIS IS THE KEY DIFFERENCE
+    const [runningTimer, setRunningTimer] = useState<{
+      recipeId: string;
+      stepIndex: number;
+      remaining: number;
+      isRunning: boolean;
+    } | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [intervalId]);
+    // Effect to handle countdown - THIS REPLACES THE OLD setInterval APPROACH
+    useEffect(() => {
+      if (!runningTimer || !runningTimer.isRunning || runningTimer.remaining <= 0) return;
 
-  function playTimerBeep() {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const now = audioContext.currentTime;
-
-      for (let i = 0; i < 3; i++) {
-        const osc = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-
-        osc.connect(gain);
-        gain.connect(audioContext.destination);
-
-        osc.frequency.setValueAtTime(800, now + i * 0.3);
-        gain.gain.setValueAtTime(0.3, now + i * 0.3);
-        gain.gain.setValueAtTime(0, now + i * 0.3 + 0.2);
-
-        osc.start(now + i * 0.3);
-        osc.stop(now + i * 0.3 + 0.2);
-      }
-    } catch (e) {
-      // Silently fail
-    }
-  }
-
-  function formatTime(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  }
-
-  function startTimer() {
-    if (!timer || timer.isRunning) return;
-    if (intervalId) clearInterval(intervalId);
-
-    onUpdate(recipe.id, {
-      stepTimers: {
-        ...recipe.stepTimers,
-        [stepIndex]: { ...timer, isRunning: true, isPaused: false },
-      },
-    });
-
-    const interval = setInterval(() => {
-      onUpdate(recipe.id, {
-        stepTimers: ((r: Recipe) => {
-          const t = r.stepTimers?.[stepIndex];
-          if (!t || !t.isRunning) {
-            clearInterval(interval);
-            return r.stepTimers || {};
-          }
-          const newRemaining = t.remaining - 1;
+      const interval = setInterval(() => {
+        setRunningTimer((prev) => {
+          if (!prev || !prev.isRunning) return null;
+          
+          const newRemaining = prev.remaining - 1;
+          
           if (newRemaining <= 0) {
+            // Timer finished
             playTimerBeep();
-            clearInterval(interval);
-            return { ...r.stepTimers, [stepIndex]: { ...t, remaining: 0, isRunning: false, isPaused: false } };
+            
+            // Update parent with completed timer
+            const currentTimer = recipe.stepTimers?.[stepIndex];
+            if (currentTimer) {
+              onUpdate(recipe.id, {
+                stepTimers: {
+                  ...recipe.stepTimers,
+                  [stepIndex]: {
+                    ...currentTimer,
+                    remaining: 0,
+                    isRunning: false,
+                    isPaused: false,
+                  },
+                },
+              });
+            }
+            
+            return null;
           }
-          return { ...r.stepTimers, [stepIndex]: { ...t, remaining: newRemaining } };
-        })(recipe),
+          
+          // Continue counting down
+          const currentTimer = recipe.stepTimers?.[stepIndex];
+          if (currentTimer) {
+            onUpdate(recipe.id, {
+              stepTimers: {
+                ...recipe.stepTimers,
+                [stepIndex]: {
+                  ...currentTimer,
+                  remaining: newRemaining,
+                },
+              },
+            });
+          }
+          
+          return { ...prev, remaining: newRemaining };
+        });
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }, [runningTimer, recipe.id, stepIndex, recipe.stepTimers, onUpdate]);
+
+    function playTimerBeep() {
+      try {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const now = audioContext.currentTime;
+
+        for (let i = 0; i < 3; i++) {
+          const osc = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+
+          osc.connect(gain);
+          gain.connect(audioContext.destination);
+
+          osc.frequency.setValueAtTime(800, now + i * 0.3);
+          gain.gain.setValueAtTime(0.3, now + i * 0.3);
+          gain.gain.setValueAtTime(0, now + i * 0.3 + 0.2);
+
+          osc.start(now + i * 0.3);
+          osc.stop(now + i * 0.3 + 0.2);
+        }
+      } catch (e) {
+        // Silently fail
+      }
+    }
+
+    function formatTime(seconds: number): string {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, "0")}`;
+    }
+
+    function startTimer() {
+      if (!timer || timer.isRunning) return;
+
+      // Update parent state
+      onUpdate(recipe.id, {
+        stepTimers: {
+          ...recipe.stepTimers,
+          [stepIndex]: { ...timer, isRunning: true, isPaused: false },
+        },
       });
-    }, 1000);
 
-    setIntervalId(interval);
-  }
-
-  function pauseTimer() {
-    if (intervalId) {
-      clearInterval(intervalId);
-      setIntervalId(null);
+      // Start local running timer
+      setRunningTimer({
+        recipeId: recipe.id,
+        stepIndex,
+        remaining: timer.remaining,
+        isRunning: true,
+      });
     }
-    if (!timer) return;
-    onUpdate(recipe.id, {
-      stepTimers: { ...recipe.stepTimers, [stepIndex]: { ...timer, isRunning: false, isPaused: true } },
-    });
-  }
 
-  function resetTimer() {
-    if (intervalId) {
-      clearInterval(intervalId);
-      setIntervalId(null);
+    function pauseTimer() {
+      if (!timer) return;
+      
+      setRunningTimer(null);
+      
+      onUpdate(recipe.id, {
+        stepTimers: {
+          ...recipe.stepTimers,
+          [stepIndex]: { ...timer, isRunning: false, isPaused: true },
+        },
+      });
     }
-    if (!timer) return;
-    onUpdate(recipe.id, {
-      stepTimers: { ...recipe.stepTimers, [stepIndex]: { ...timer, remaining: timer.duration, isRunning: false, isPaused: false } },
-    });
-  }
 
-  function addTimer() {
-    const totalSeconds = timerDuration.minutes * 60 + timerDuration.seconds;
-    if (totalSeconds <= 0) return;
-
-    const newTimer: StepTimer = {
-      id: uid(),
-      duration: totalSeconds,
-      remaining: totalSeconds,
-      isRunning: false,
-      isPaused: false,
-    };
-
-    onUpdate(recipe.id, { stepTimers: { ...recipe.stepTimers, [stepIndex]: newTimer } });
-    setShowTimerForm(false);
-    setTimerDuration({ minutes: 0, seconds: 0 });
-  }
-
-  function deleteTimer() {
-    if (intervalId) {
-      clearInterval(intervalId);
-      setIntervalId(null);
+    function resetTimer() {
+      if (!timer) return;
+      
+      setRunningTimer(null);
+      
+      onUpdate(recipe.id, {
+        stepTimers: {
+          ...recipe.stepTimers,
+          [stepIndex]: {
+            ...timer,
+            remaining: timer.duration,
+            isRunning: false,
+            isPaused: false,
+          },
+        },
+      });
     }
-    const newTimers = { ...recipe.stepTimers };
-    delete newTimers[stepIndex];
-    onUpdate(recipe.id, { stepTimers: newTimers });
-  }
 
-  function editTimer() {
-    setShowTimerForm(true);
-    if (timer) {
-      setTimerDuration({ minutes: Math.floor(timer.duration / 60), seconds: timer.duration % 60 });
+    function addTimer() {
+      const totalSeconds = timerDuration.minutes * 60 + timerDuration.seconds;
+      if (totalSeconds <= 0) return;
+
+      const newTimer: StepTimer = {
+        id: uid(),
+        duration: totalSeconds,
+        remaining: totalSeconds,
+        isRunning: false,
+        isPaused: false,
+      };
+
+      onUpdate(recipe.id, {
+        stepTimers: { ...recipe.stepTimers, [stepIndex]: newTimer },
+      });
+      setShowTimerForm(false);
+      setTimerDuration({ minutes: 0, seconds: 0 });
     }
-  }
 
-  if (!timer) {
+    function deleteTimer() {
+      setRunningTimer(null);
+      
+      const newTimers = { ...recipe.stepTimers };
+      delete newTimers[stepIndex];
+      onUpdate(recipe.id, { stepTimers: newTimers });
+    }
+
+    function editTimer() {
+      setShowTimerForm(true);
+      if (timer) {
+        setTimerDuration({
+          minutes: Math.floor(timer.duration / 60),
+          seconds: timer.duration % 60,
+        });
+      }
+    }
+
+    if (!timer) {
+      // Only show timer controls in edit mode
+      if (editingRecipeId !== recipe.id) {
+        return null;
+      }
+      
+      return (
+        <div style={{ marginTop: "8px" }} onClick={(e) => e.stopPropagation()}>
+          {showTimerForm ? (
+            <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                type="number"
+                placeholder="min"
+                value={timerDuration.minutes || ""}
+                onChange={(e) =>
+                  setTimerDuration({ ...timerDuration, minutes: parseInt(e.target.value) || 0 })
+                }
+                style={{ width: "50px", padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <span style={{ fontSize: "0.85rem" }}>:</span>
+              <input
+                type="number"
+                placeholder="sec"
+                value={timerDuration.seconds || ""}
+                onChange={(e) =>
+                  setTimerDuration({ ...timerDuration, seconds: parseInt(e.target.value) || 0 })
+                }
+                style={{ width: "50px", padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <button
+                onClick={addTimer}
+                className="task-action-btn"
+                style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+              >
+                Add
+              </button>
+              <button
+                onClick={() => setShowTimerForm(false)}
+                className="task-action-btn"
+                style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowTimerForm(true)}
+              className="task-action-btn"
+              style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+            >
+              + Timer
+            </button>
+          )}
+        </div>
+      );
+    }
+
     return (
-      <div style={{ marginTop: "8px" }} onClick={(e) => e.stopPropagation()}>
-        {showTimerForm ? (
-          <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
-            <input type="number" placeholder="min" value={timerDuration.minutes || ""} onChange={(e) => setTimerDuration({ ...timerDuration, minutes: parseInt(e.target.value) || 0 })} style={{ width: "50px", padding: "4px 8px", fontSize: "0.85rem", height: "28px" }} onClick={(e) => e.stopPropagation()} />
-            <span style={{ fontSize: "0.85rem" }}>:</span>
-            <input type="number" placeholder="sec" value={timerDuration.seconds || ""} onChange={(e) => setTimerDuration({ ...timerDuration, seconds: parseInt(e.target.value) || 0 })} style={{ width: "50px", padding: "4px 8px", fontSize: "0.85rem", height: "28px" }} onClick={(e) => e.stopPropagation()} />
-            <button onClick={addTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>Add</button>
-            <button onClick={() => setShowTimerForm(false)} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>✕</button>
+      <div
+        style={{
+          marginTop: "8px",
+          padding: "8px",
+          background: "rgba(37, 244, 238, 0.1)",
+          borderRadius: "6px",
+          border: "1px solid rgba(37, 244, 238, 0.3)",
+          width: "100%",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "8px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "1.1rem",
+              fontWeight: "600",
+              color: timer.remaining === 0 ? "#4caf50" : "#25f4ee",
+              minWidth: "60px",
+            }}
+          >
+            {formatTime(timer.remaining)}
+            {timer.remaining === 0 && " ✓"}
           </div>
-        ) : (
-          <button onClick={() => setShowTimerForm(true)} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>+ Timer</button>
-        )}
+          <div style={{ display: "flex", gap: "4px" }}>
+            {!timer.isRunning && timer.remaining > 0 && (
+              <button
+                onClick={startTimer}
+                className="task-action-btn"
+                style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+              >
+                ▷
+              </button>
+            )}
+            {timer.isRunning && (
+              <button
+                onClick={pauseTimer}
+                className="task-action-btn"
+                style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+              >
+                ❚❚
+              </button>
+            )}
+            {(timer.isPaused || timer.remaining === 0) && (
+              <button
+                onClick={resetTimer}
+                className="task-action-btn"
+                style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+              >
+                ↻
+              </button>
+            )}
+            {editingRecipeId === recipe.id && (
+              <>
+                {showTimerForm ? (
+                  <>
+                    <input
+                      type="number"
+                      placeholder="m"
+                      value={timerDuration.minutes || ""}
+                      onChange={(e) =>
+                        setTimerDuration({ ...timerDuration, minutes: parseInt(e.target.value) || 0 })
+                      }
+                      style={{ width: "40px", padding: "4px", fontSize: "0.85rem", height: "28px" }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <input
+                      type="number"
+                      placeholder="s"
+                      value={timerDuration.seconds || ""}
+                      onChange={(e) =>
+                        setTimerDuration({ ...timerDuration, seconds: parseInt(e.target.value) || 0 })
+                      }
+                      style={{ width: "40px", padding: "4px", fontSize: "0.85rem", height: "28px" }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <button
+                      onClick={addTimer}
+                      className="task-action-btn"
+                      style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      onClick={() => setShowTimerForm(false)}
+                      className="task-action-btn"
+                      style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+                    >
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={editTimer}
+                      className="task-action-btn"
+                      style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+                    >
+                      <Icon name="edit" />
+                    </button>
+                    <button
+                      onClick={deleteTimer}
+                      className="task-action-btn"
+                      style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}
+                    >
+                      <Icon name="trash" />
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
-
-  return (
-    <div style={{ marginTop: "8px", padding: "8px", background: "rgba(37, 244, 238, 0.1)", borderRadius: "6px", border: "1px solid rgba(37, 244, 238, 0.3)" }} onClick={(e) => e.stopPropagation()}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
-        <div style={{ fontSize: "1.1rem", fontWeight: "600", color: timer.remaining === 0 ? "#4caf50" : "#25f4ee" }}>
-          ⏱️ {formatTime(timer.remaining)}{timer.remaining === 0 && " ✓"}
-        </div>
-        <div style={{ display: "flex", gap: "4px" }}>
-          {!timer.isRunning && timer.remaining > 0 && <button onClick={startTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>▶️</button>}
-          {timer.isRunning && <button onClick={pauseTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>⏸️</button>}
-          {(timer.isPaused || timer.remaining === 0) && <button onClick={resetTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>🔄</button>}
-          {showTimerForm ? (
-            <>
-              <input type="number" placeholder="m" value={timerDuration.minutes || ""} onChange={(e) => setTimerDuration({ ...timerDuration, minutes: parseInt(e.target.value) || 0 })} style={{ width: "40px", padding: "4px", fontSize: "0.85rem", height: "28px" }} onClick={(e) => e.stopPropagation()} />
-              <input type="number" placeholder="s" value={timerDuration.seconds || ""} onChange={(e) => setTimerDuration({ ...timerDuration, seconds: parseInt(e.target.value) || 0 })} style={{ width: "40px", padding: "4px", fontSize: "0.85rem", height: "28px" }} onClick={(e) => e.stopPropagation()} />
-              <button onClick={addTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>✓</button>
-              <button onClick={() => setShowTimerForm(false)} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>✕</button>
-            </>
-          ) : (
-            <>
-              <button onClick={editTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}><Icon name="edit" /></button>
-              <button onClick={deleteTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}><Icon name="trash" /></button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function RecipesModule() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -380,13 +572,12 @@ export default function RecipesModule() {
   function toggleStepHighlight(recipeId: string, stepIndex: number) {
     setHighlightedSteps((prev) => {
       const current = prev[recipeId] || new Set();
-      const updated = new Set(current);
-      if (updated.has(stepIndex)) {
-        updated.delete(stepIndex);
-      } else {
-        updated.add(stepIndex);
+      // If clicking the same step that's already highlighted, deselect it
+      if (current.has(stepIndex)) {
+        return { ...prev, [recipeId]: new Set() };
       }
-      return { ...prev, [recipeId]: updated };
+      // Otherwise, select only this step (single selection)
+      return { ...prev, [recipeId]: new Set([stepIndex]) };
     });
   }
 
@@ -758,7 +949,7 @@ export default function RecipesModule() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setExpandedRecipeId(expandedRecipeId === r.id ? null : r.id)}>
               <div style={{ flex: 1 }}>
                 <h3 style={{ margin: 0, fontSize: "1rem" }}>{r.title}</h3>
-                {r.link && <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: "#25f4ee", fontSize: 12 }} onClick={(e) => e.stopPropagation()}>View</a>}
+                {r.link && expandedRecipeId === r.id && <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: "#25f4ee", fontSize: 12 }} onClick={(e) => e.stopPropagation()}>View</a>}
               </div>
               <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                 {expandedRecipeId === r.id && (
@@ -767,7 +958,11 @@ export default function RecipesModule() {
                     className="task-action-btn" 
                     style={{ padding: "4px 8px" }}
                   >
-                    <Icon name={editingRecipeId === r.id ? "x" : "edit"} />
+                    {editingRecipeId === r.id ? (
+                      <span style={{ fontSize: "1rem" }}>✕</span>
+                    ) : (
+                      <Icon name="edit" />
+                    )}
                   </button>
                 )}
                 <div style={{ position: "relative" }}>
@@ -1087,7 +1282,13 @@ export default function RecipesModule() {
                               <>
                                 <div>{step}</div>
                                 <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-                                  <StepTimerComponent recipe={r} stepIndex={i} onUpdate={handleUpdateRecipe} />
+                                  <StepTimerComponent 
+                                    key={`${r.id}-${i}`}
+                                    recipe={r} 
+                                    stepIndex={i} 
+                                    onUpdate={handleUpdateRecipe}
+                                    editingRecipeId={editingRecipeId}
+                                  />
                                   {editingRecipeId === r.id && (
                                     <div style={{ display: "flex", gap: 4 }}>
                                       <button
