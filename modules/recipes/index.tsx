@@ -6,10 +6,10 @@ const uid = () => Math.random().toString(36).slice(2, 11);
 
 type Ingredient = {
   id: string;
-  name: string;
-  amount?: string;
+  title: string;
+  section: string;
+  count?: number;
   unit?: string;
-  checked: boolean;
 };
 
 type StepTimer = {
@@ -51,10 +51,7 @@ async function apiLoadRecipes(): Promise<Recipe[]> {
   }
 }
 
-async function apiSaveRecipes(recipes: Recipe[]) {
-  // This function is no longer used - we use individual update/delete calls instead
-  console.warn("apiSaveRecipes called - this should not happen");
-}
+
 
 async function apiUpdateRecipe(id: string, updates: Partial<Recipe>) {
   try {
@@ -298,7 +295,7 @@ function StepTimerComponent({
 
 export default function RecipesModule() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [newIngredient, setNewIngredient] = useState({ name: "", section: "Pantry", count: "", unit: "" });
+  const [newIngredient, setNewIngredient] = useState({ title: "", section: "Pantry", count: 0, unit: "" });
   const [editingIngredientId, setEditingIngredientId] = useState<string | null>(null);
   const [editingIngredientTitle, setEditingIngredientTitle] = useState("");
   const [editingIngredientSection, setEditingIngredientSection] = useState("Pantry");
@@ -351,18 +348,18 @@ export default function RecipesModule() {
   }
 
   function handleAddIngredient(recipeId: string) {
-    if (!newIngredient.name.trim()) return;
+    if (!newIngredient.title.trim()) return;
     const recipe = recipes.find((r) => r.id === recipeId);
     if (!recipe) return;
     const ingredient: Ingredient = {
       id: uid(),
-      title: newIngredient.name,
+      title: newIngredient.title,
       section: newIngredient.section,
-      count: newIngredient.count ? parseFloat(newIngredient.count) : undefined,
+      count: newIngredient.count ? newIngredient.count : undefined,
       unit: newIngredient.unit || undefined,
     };
     handleUpdateRecipe(recipeId, { ingredients: [...recipe.ingredients, ingredient] });
-    setNewIngredient({ name: "", section: "Pantry", count: "", unit: "" });
+    setNewIngredient({ title: "", section: "Pantry", count: 0, unit: "" });
   }
 
   function handleUpdateIngredient(recipeId: string, ingredientId: string, title: string, section: string, count?: number, unit?: string) {
@@ -992,8 +989,8 @@ export default function RecipesModule() {
                       <input
                         type="text"
                         placeholder="Ingredient name"
-                        value={newIngredient.name}
-                        onChange={(e) => setNewIngredient({ ...newIngredient, name: e.target.value })}
+                        value={newIngredient.title}
+                        onChange={(e) => setNewIngredient({ ...newIngredient, title: e.target.value })}
                         style={{ width: "100%", padding: 6, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
                       />
                       <div style={{ display: "flex", gap: 6 }}>
@@ -1002,7 +999,7 @@ export default function RecipesModule() {
                           step="any"
                           placeholder="Quantity"
                           value={newIngredient.count}
-                          onChange={(e) => setNewIngredient({ ...newIngredient, count: e.target.value })}
+                          onChange={(e) => setNewIngredient({ ...newIngredient, count: parseFloat(e.target.value) })}
                           style={{ width: "80px", padding: 6, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
                         />
                         <select
