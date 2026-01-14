@@ -1,570 +1,504 @@
-import React, { useEffect, useState } from "react";
+// modules/recipes/index.tsx
+import React, { useState, useEffect } from "react";
 import Icon from "../../components/Icon";
-import Modal from "../../components/Modal";
 
-type Ingredient = { id: string; title: string; section: string };
+const uid = () => Math.random().toString(36).slice(2, 11);
+
+type Ingredient = {
+  id: string;
+  name: string;
+  amount?: string;
+  unit?: string;
+  checked: boolean;
+};
+
+type StepTimer = {
+  id: string;
+  duration: number;
+  remaining: number;
+  isRunning: boolean;
+  isPaused: boolean;
+};
 
 type Recipe = {
   id: string;
   title: string;
   link?: string;
-  instructions?: string[]; // now an ordered list of steps
+  instructions?: string[];
   ingredients: Ingredient[];
   planned?: boolean;
+  stepTimers?: Record<number, StepTimer>;
 };
 
-function uid() {
-  return Math.random().toString(36).slice(2, 9);
+async function apiLoadRecipes(): Promise<Recipe[]> {
+  try {
+    const res = await fetch("/api/recipes");
+    if (!res.ok) return [];
+    const data = await res.json();
+    console.log("Raw API response:", data);
+    
+    let recipes = Array.isArray(data) ? data : (data.recipes || []);
+    
+    // Ensure backward compatibility
+    return recipes.map((r: any) => ({
+      ...r,
+      ingredients: r.ingredients || [],
+      stepTimers: r.stepTimers || {},
+    }));
+  } catch (e) {
+    console.error("Failed to load recipes:", e);
+    return [];
+  }
 }
 
-export default function RecipesModule() {
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [loading, setLoading] = useState(true);
+async function apiSaveRecipes(recipes: Recipe[]) {
+  // This function is no longer used - we use individual update/delete calls instead
+  console.warn("apiSaveRecipes called - this should not happen");
+}
 
-  const [title, setTitle] = useState("");
-  const [link, setLink] = useState("");
-  // instructions are now an ordered list of steps
-  const [instructionsSteps, setInstructionsSteps] = useState<string[]>([]);
-  const [newStepText, setNewStepText] = useState("");
-  const [newIngredient, setNewIngredient] = useState("");
-  const [formIngredients, setFormIngredients] = useState<Ingredient[]>([]);
-  const SECTIONS = [
-    "Produce",
-    "Meat",
-    "Dairy",
-    "Frozen",
-    "Bakery",
-    "Pantry",
-    "Other",
-  ];
-  const [newIngredientSection, setNewIngredientSection] = useState("Pantry");
-  const [editingFormIndex, setEditingFormIndex] = useState<number | null>(null);
-  const [editingFormTitle, setEditingFormTitle] = useState("");
-  const [editingFormSection, setEditingFormSection] = useState("Pantry");
-  const [formPlanned, setFormPlanned] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [showPlannedOnly, setShowPlannedOnly] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingRecipeIndex, setEditingRecipeIndex] = useState<number | null>(
-    null
-  );
-  const [editingRecipeTitle, setEditingRecipeTitle] = useState("");
-  const [editingRecipeSection, setEditingRecipeSection] = useState("Pantry");
-  const [pushMessage, setPushMessage] = useState<string | null>(null);
-  const [highlightedSteps, setHighlightedSteps] = useState<
-    Record<string, Set<number>>
-  >({});
-
-  // Toggle step highlight
-  function toggleStepHighlight(recipeId: string, stepIndex: number) {
-    setHighlightedSteps((prev) => {
-      const newHighlights = { ...prev };
-      if (!newHighlights[recipeId]) {
-        newHighlights[recipeId] = new Set();
-      }
-      const recipeSet = new Set(newHighlights[recipeId]);
-      if (recipeSet.has(stepIndex)) {
-        recipeSet.delete(stepIndex);
-      } else {
-        recipeSet.add(stepIndex);
-      }
-      newHighlights[recipeId] = recipeSet;
-      return newHighlights;
-    });
-  }
-
-  // Fetch recipes from API on mount
-  useEffect(() => {
-    fetchRecipes();
-  }, []);
-
-  async function fetchRecipes() {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/recipes");
-      if (res.ok) {
-        const data = await res.json();
-        const fetchedRecipes = (data.recipes || []).map((r: any) => ({
-          ...r,
-          ingredients: (r.ingredients || []).map((it: any) =>
-            typeof it === "string"
-              ? { id: uid(), title: it, section: "Pantry" }
-              : it
-          ),
-          instructions: Array.isArray(r.instructions)
-            ? r.instructions
-            : typeof r.instructions === "string"
-              ? (r.instructions || "")
-                  .split("\n")
-                  .map((s: string) => s.trim())
-                  .filter(Boolean)
-              : undefined,
-        }));
-        setRecipes(fetchedRecipes);
-        // Also cache in localStorage for offline access
-        try {
-          localStorage.setItem("recipes", JSON.stringify(fetchedRecipes));
-        } catch (e) {}
-      }
-    } catch (e) {
-      console.error("Failed to fetch recipes:", e);
-      // Fallback to localStorage if API fails
-      try {
-        const raw = localStorage.getItem("recipes");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          setRecipes(
-            parsed.map((r: any) => ({
-              ...r,
-              ingredients: (r.ingredients || []).map((it: any) =>
-                typeof it === "string"
-                  ? { id: uid(), title: it, section: "Pantry" }
-                  : it
-              ),
-              instructions: Array.isArray(r.instructions)
-                ? r.instructions
-                : typeof r.instructions === "string"
-                  ? (r.instructions || "")
-                      .split("\n")
-                      .map((s: string) => s.trim())
-                      .filter(Boolean)
-                  : undefined,
-            }))
-          );
-        }
-      } catch (localErr) {
-        console.error(localErr);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Sync to localStorage whenever recipes change (for offline backup)
-  useEffect(() => {
-    try {
-      localStorage.setItem("recipes", JSON.stringify(recipes));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [recipes]);
-
-  // API helper functions
-  async function apiCreateRecipe(rec: Recipe) {
-    const res = await fetch("/api/recipes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(rec),
-    });
-    if (!res.ok) throw new Error("Failed to create recipe");
-    return await res.json();
-  }
-
-  async function apiUpdateRecipe(id: string, rec: Partial<Recipe>) {
+async function apiUpdateRecipe(id: string, updates: Partial<Recipe>) {
+  try {
     const res = await fetch(`/api/recipes/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(rec),
+      body: JSON.stringify(updates),
     });
     if (!res.ok) throw new Error("Failed to update recipe");
     return await res.json();
+  } catch (e) {
+    console.error("Failed to update recipe:", e);
+    throw e;
   }
+}
 
-  async function apiDeleteRecipe(id: string) {
+async function apiDeleteRecipe(id: string) {
+  try {
     const res = await fetch(`/api/recipes/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
     if (!res.ok) throw new Error("Failed to delete recipe");
+  } catch (e) {
+    console.error("Failed to delete recipe:", e);
+    throw e;
+  }
+}
+
+async function apiCreateRecipe(recipe: Recipe) {
+  try {
+    const res = await fetch("/api/recipes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(recipe),
+    });
+    if (!res.ok) throw new Error("Failed to create recipe");
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to create recipe:", e);
+    throw e;
+  }
+}
+
+async function apiPushIngredients(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/recipes/${encodeURIComponent(id)}/push`, {
+      method: "POST",
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Timer Component
+function StepTimerComponent({
+  recipe,
+  stepIndex,
+  onUpdate,
+}: {
+  recipe: Recipe;
+  stepIndex: number;
+  onUpdate: (id: string, updates: Partial<Recipe>) => void;
+}) {
+  const timer = recipe.stepTimers?.[stepIndex];
+  const [showTimerForm, setShowTimerForm] = useState(false);
+  const [timerDuration, setTimerDuration] = useState({ minutes: 0, seconds: 0 });
+  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [intervalId]);
+
+  function playTimerBeep() {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const now = audioContext.currentTime;
+
+      for (let i = 0; i < 3; i++) {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+
+        osc.frequency.setValueAtTime(800, now + i * 0.3);
+        gain.gain.setValueAtTime(0.3, now + i * 0.3);
+        gain.gain.setValueAtTime(0, now + i * 0.3 + 0.2);
+
+        osc.start(now + i * 0.3);
+        osc.stop(now + i * 0.3 + 0.2);
+      }
+    } catch (e) {
+      // Silently fail
+    }
   }
 
-  async function apiPushIngredients(id: string): Promise<boolean> {
-    try {
-      const res = await fetch(`/api/recipes/${encodeURIComponent(id)}/push`, {
-        method: "POST",
+  function formatTime(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  }
+
+  function startTimer() {
+    if (!timer || timer.isRunning) return;
+    if (intervalId) clearInterval(intervalId);
+
+    onUpdate(recipe.id, {
+      stepTimers: {
+        ...recipe.stepTimers,
+        [stepIndex]: { ...timer, isRunning: true, isPaused: false },
+      },
+    });
+
+    const interval = setInterval(() => {
+      onUpdate(recipe.id, {
+        stepTimers: ((r: Recipe) => {
+          const t = r.stepTimers?.[stepIndex];
+          if (!t || !t.isRunning) {
+            clearInterval(interval);
+            return r.stepTimers || {};
+          }
+          const newRemaining = t.remaining - 1;
+          if (newRemaining <= 0) {
+            playTimerBeep();
+            clearInterval(interval);
+            return { ...r.stepTimers, [stepIndex]: { ...t, remaining: 0, isRunning: false, isPaused: false } };
+          }
+          return { ...r.stepTimers, [stepIndex]: { ...t, remaining: newRemaining } };
+        })(recipe),
       });
-      return res.ok;
-    } catch (e) {
-      return false;
-    }
+    }, 1000);
+
+    setIntervalId(interval);
   }
 
-  async function togglePlanned(recipeId: string) {
-    const recipe = recipes.find((r) => r.id === recipeId);
-    if (!recipe) return;
-
-    const newPlannedStatus = !recipe.planned;
-
-    // Optimistically update UI
-    setRecipes((list) =>
-      list.map((x) =>
-        x.id === recipeId ? { ...x, planned: newPlannedStatus } : x
-      )
-    );
-
-    // Persist to server
-    try {
-      await apiUpdateRecipe(recipeId, { planned: newPlannedStatus });
-    } catch (e) {
-      console.error("Failed to update planned status:", e);
-      // Revert on error
-      setRecipes((list) =>
-        list.map((x) =>
-          x.id === recipeId ? { ...x, planned: recipe.planned } : x
-        )
-      );
-      alert("Failed to update planned status. Please try again.");
+  function pauseTimer() {
+    if (intervalId) {
+      clearInterval(intervalId);
+      setIntervalId(null);
     }
+    if (!timer) return;
+    onUpdate(recipe.id, {
+      stepTimers: { ...recipe.stepTimers, [stepIndex]: { ...timer, isRunning: false, isPaused: true } },
+    });
   }
 
-  function scheduleRecipeOnCalendar(recipeId: string) {
-    const recipe = recipes.find((r) => r.id === recipeId);
-    if (!recipe) return;
+  function resetTimer() {
+    if (intervalId) {
+      clearInterval(intervalId);
+      setIntervalId(null);
+    }
+    if (!timer) return;
+    onUpdate(recipe.id, {
+      stepTimers: { ...recipe.stepTimers, [stepIndex]: { ...timer, remaining: timer.duration, isRunning: false, isPaused: false } },
+    });
+  }
 
-    // Get today's date at 6 PM
-    const today = new Date();
-    today.setHours(18, 0, 0, 0);
+  function addTimer() {
+    const totalSeconds = timerDuration.minutes * 60 + timerDuration.seconds;
+    if (totalSeconds <= 0) return;
 
-    // Create event data
-    const eventData = {
-      title: recipe.title,
-      date: today.toISOString().slice(0, 10),
-      time: "18:00",
+    const newTimer: StepTimer = {
+      id: uid(),
+      duration: totalSeconds,
+      remaining: totalSeconds,
+      isRunning: false,
+      isPaused: false,
     };
 
-    // Dispatch custom event to be picked up by calendar module
-    window.dispatchEvent(
-      new CustomEvent("schedule-recipe-event", {
-        detail: eventData,
-      })
-    );    
+    onUpdate(recipe.id, { stepTimers: { ...recipe.stepTimers, [stepIndex]: newTimer } });
+    setShowTimerForm(false);
+    setTimerDuration({ minutes: 0, seconds: 0 });
   }
 
-  function RecipePlanMenu({ recipe }: { recipe: Recipe }) {
-    const [showMenu, setShowMenu] = useState(false);
+  function deleteTimer() {
+    if (intervalId) {
+      clearInterval(intervalId);
+      setIntervalId(null);
+    }
+    const newTimers = { ...recipe.stepTimers };
+    delete newTimers[stepIndex];
+    onUpdate(recipe.id, { stepTimers: newTimers });
+  }
 
+  function editTimer() {
+    setShowTimerForm(true);
+    if (timer) {
+      setTimerDuration({ minutes: Math.floor(timer.duration / 60), seconds: timer.duration % 60 });
+    }
+  }
+
+  if (!timer) {
     return (
-      <div style={{ position: "relative" }}>
-        <button
-          className={`toggle-btn small ${recipe.planned ? "active" : ""}`}
-          title="Plan this recipe"
-          aria-pressed={!!recipe.planned}
-          onClick={() => setShowMenu(!showMenu)}
-        >
-          <span className="icon">
-            <Icon name="heart" />
-          </span>
-        </button>
-
-        {showMenu && (
-          <>
-            {/* Backdrop to close menu */}
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 10,
-              }}
-              onClick={() => setShowMenu(false)}
-            />
-            
-            {/* Menu dropdown */}
-            <div
-              style={{
-                position: "absolute",
-                top: "100%",
-                right: 0,
-                marginTop: 4,
-                background: "var(--card)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 8,
-                padding: 8,
-                minWidth: 200,
-                zIndex: 20,
-                boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => {
-                  togglePlanned(recipe.id);
-                  setShowMenu(false);
-                }}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  background: "transparent",
-                  border: "none",
-                  color: "#fff",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  borderRadius: 4,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "rgba(255,255,255,0.1)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = "transparent")
-                }
-              >
-                <Icon name="heart" size={16} />
-                <span>
-                  {recipe.planned ? "Remove from planned" : "Mark as planned"}
-                </span>
-              </button>
-
-              <button
-                onClick={() => {
-                  scheduleRecipeOnCalendar(recipe.id);
-                  setShowMenu(false);
-                }}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  background: "transparent",
-                  border: "none",
-                  color: "#fff",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  borderRadius: 4,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginTop: 4,
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "rgba(255,255,255,0.1)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = "transparent")
-                }
-              >
-                <Icon name="calendar" size={16} />
-                <span>Schedule on calendar</span>
-              </button>
-            </div>
-          </>
+      <div style={{ marginTop: "8px" }} onClick={(e) => e.stopPropagation()}>
+        {showTimerForm ? (
+          <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
+            <input type="number" placeholder="min" value={timerDuration.minutes || ""} onChange={(e) => setTimerDuration({ ...timerDuration, minutes: parseInt(e.target.value) || 0 })} style={{ width: "50px", padding: "4px 8px", fontSize: "0.85rem", height: "28px" }} onClick={(e) => e.stopPropagation()} />
+            <span style={{ fontSize: "0.85rem" }}>:</span>
+            <input type="number" placeholder="sec" value={timerDuration.seconds || ""} onChange={(e) => setTimerDuration({ ...timerDuration, seconds: parseInt(e.target.value) || 0 })} style={{ width: "50px", padding: "4px 8px", fontSize: "0.85rem", height: "28px" }} onClick={(e) => e.stopPropagation()} />
+            <button onClick={addTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>Add</button>
+            <button onClick={() => setShowTimerForm(false)} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>✕</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowTimerForm(true)} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>+ Timer</button>
         )}
       </div>
     );
   }
 
-  function addIngredient() {
-    const txt = newIngredient.trim();
-    if (!txt) return;
-    const ing: Ingredient = {
-      id: uid(),
-      title: txt,
-      section: newIngredientSection,
-    };
-    if (editingId) {
-      setRecipes((r) =>
-        r.map((rc) =>
-          rc.id === editingId
-            ? { ...rc, ingredients: [...rc.ingredients, ing] }
-            : rc
-        )
-      );
-    } else {
-      setFormIngredients((prev) => [...prev, ing]);
-    }
-    setNewIngredient("");
+  return (
+    <div style={{ marginTop: "8px", padding: "8px", background: "rgba(37, 244, 238, 0.1)", borderRadius: "6px", border: "1px solid rgba(37, 244, 238, 0.3)" }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: "1.1rem", fontWeight: "600", color: timer.remaining === 0 ? "#4caf50" : "#25f4ee" }}>
+          ⏱️ {formatTime(timer.remaining)}{timer.remaining === 0 && " ✓"}
+        </div>
+        <div style={{ display: "flex", gap: "4px" }}>
+          {!timer.isRunning && timer.remaining > 0 && <button onClick={startTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>▶️</button>}
+          {timer.isRunning && <button onClick={pauseTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>⏸️</button>}
+          {(timer.isPaused || timer.remaining === 0) && <button onClick={resetTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>🔄</button>}
+          {showTimerForm ? (
+            <>
+              <input type="number" placeholder="m" value={timerDuration.minutes || ""} onChange={(e) => setTimerDuration({ ...timerDuration, minutes: parseInt(e.target.value) || 0 })} style={{ width: "40px", padding: "4px", fontSize: "0.85rem", height: "28px" }} onClick={(e) => e.stopPropagation()} />
+              <input type="number" placeholder="s" value={timerDuration.seconds || ""} onChange={(e) => setTimerDuration({ ...timerDuration, seconds: parseInt(e.target.value) || 0 })} style={{ width: "40px", padding: "4px", fontSize: "0.85rem", height: "28px" }} onClick={(e) => e.stopPropagation()} />
+              <button onClick={addTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>✓</button>
+              <button onClick={() => setShowTimerForm(false)} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}>✕</button>
+            </>
+          ) : (
+            <>
+              <button onClick={editTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}><Icon name="edit" /></button>
+              <button onClick={deleteTimer} className="task-action-btn" style={{ padding: "4px 8px", fontSize: "0.85rem", height: "28px" }}><Icon name="trash" /></button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function RecipesModule() {
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [newIngredient, setNewIngredient] = useState({ name: "", section: "Pantry", count: "", unit: "" });
+  const [editingIngredientId, setEditingIngredientId] = useState<string | null>(null);
+  const [editingIngredientTitle, setEditingIngredientTitle] = useState("");
+  const [editingIngredientSection, setEditingIngredientSection] = useState("Pantry");
+  const [editingIngredientCount, setEditingIngredientCount] = useState("");
+  const [editingIngredientUnit, setEditingIngredientUnit] = useState("");
+  const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
+  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
+  const [editingStepText, setEditingStepText] = useState("");
+  const [newStepText, setNewStepText] = useState("");
+  const [showPlanned, setShowPlanned] = useState(false);
+  const [highlightedSteps, setHighlightedSteps] = useState<Record<string, Set<number>>>({});
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createRecipeTitle, setCreateRecipeTitle] = useState("");
+  const [createRecipeLink, setCreateRecipeLink] = useState("");
+  const [createRecipeSteps, setCreateRecipeSteps] = useState<string[]>([]);
+  const [createStepInput, setCreateStepInput] = useState("");
+  const [showMenuForRecipe, setShowMenuForRecipe] = useState<string | null>(null);
+
+  const SECTIONS = ["Produce", "Meat", "Dairy", "Frozen", "Bakery", "Pantry", "Other"];
+  const UNITS = ["", "cup", "cups", "tbsp", "tsp", "oz", "lb", "g", "kg", "ml", "L", "qt", "pt", "gal", "pinch", "dash", "clove", "cloves", "piece", "pieces", "whole"];
+
+  useEffect(() => {
+    apiLoadRecipes().then((loaded) => {
+      console.log("Loaded recipes count:", loaded.length);
+      setRecipes(loaded);
+    });
+  }, []);
+
+  function handleUpdateRecipe(id: string, updates: Partial<Recipe>) {
+    // Optimistically update UI
+    setRecipes(recipes.map((r) => (r.id === id ? { ...r, ...updates } : r)));
+    
+    // Persist to server
+    apiUpdateRecipe(id, updates).catch((e) => {
+      console.error("Failed to update recipe:", e);
+      // Could revert here, but for now just log
+    });
   }
 
-  function createRecipe() {
-    const id = uid();
-    const rec: Recipe = {
-      id,
-      title: title.trim() || "Untitled",
-      link: link.trim() || undefined,
-      instructions: instructionsSteps.length ? instructionsSteps : undefined,
-      ingredients: formIngredients,
-      planned: formPlanned,
-    };
-
-    // Create on server first, then update local state
-    apiCreateRecipe(rec)
-      .then(() => {
-        setRecipes((r) => [rec, ...r]);
-        setTitle("");
-        setLink("");
-        setInstructionsSteps([]);
-        setNewStepText("");
-        setNewIngredient("");
-        setFormIngredients([]);
-        setShowForm(false);
-      })
-      .catch((e) => {
-        console.error("Failed to create recipe:", e);
-        alert("Failed to save recipe. Please try again.");
-      });
-  }
-
-  // keep server in sync when deleting
-  async function removeRecipeWithSync(id: string) {
-    try {
-      await apiDeleteRecipe(id);
-      setRecipes((r) => r.filter((x) => x.id !== id));
-    } catch (e) {
+  function handleDeleteRecipe(id: string) {
+    // Optimistically update UI
+    setRecipes(recipes.filter((r) => r.id !== id));
+    
+    // Persist to server
+    apiDeleteRecipe(id).catch((e) => {
       console.error("Failed to delete recipe:", e);
       alert("Failed to delete recipe. Please try again.");
-    }
-  }
-
-  function startEdit(r: Recipe) {
-    setEditingId(r.id);
-    setTitle(r.title);
-    setLink(r.link || "");
-    setNewStepText("");
-    setNewIngredient("");
-    const instr: any = (r as any).instructions;
-    setInstructionsSteps(
-      Array.isArray(instr)
-        ? instr
-        : typeof instr === "string"
-          ? (instr || "")
-              .split("\n")
-              .map((s: string) => s.trim())
-              .filter(Boolean)
-          : []
-    );
-    setFormIngredients(
-      (r.ingredients || []).map((it: any) =>
-        typeof it === "string"
-          ? { id: uid(), title: it, section: "Pantry" }
-          : it
-      )
-    );
-    setFormPlanned(!!r.planned);
-    setShowForm(true);
-  }
-
-  async function saveEdit() {
-    if (!editingId) return;
-
-    const updates = {
-      title: title.trim() || "Untitled",
-      link: link.trim() || undefined,
-      instructions: instructionsSteps.length ? instructionsSteps : undefined,
-      ingredients: formIngredients,
-      planned: formPlanned,
-    };
-
-    try {
-      await apiUpdateRecipe(editingId, updates);
-      setRecipes((r) =>
-        r.map((rc) => (rc.id === editingId ? { ...rc, ...updates } : rc))
-      );
-      setEditingId(null);
-      setTitle("");
-      setLink("");
-      setInstructionsSteps([]);
-      setNewStepText("");
-      setNewIngredient("");
-      setFormIngredients([]);
-      setShowForm(false);
-    } catch (e) {
-      console.error("Failed to update recipe:", e);
-      alert("Failed to save recipe. Please try again.");
-    }
-  }
-
-  // Steps helpers
-  function addStep() {
-    const t = newStepText.trim();
-    if (!t) return;
-    setInstructionsSteps((s) => [...s, t]);
-    setNewStepText("");
-  }
-  function removeStep(idx: number) {
-    setInstructionsSteps((s) => s.filter((_, i) => i !== idx));
-  }
-  function moveStepUp(idx: number) {
-    if (idx <= 0) return;
-    setInstructionsSteps((s) => {
-      const copy = [...s];
-      const tmp = copy[idx - 1];
-      copy[idx - 1] = copy[idx];
-      copy[idx] = tmp;
-      return copy;
-    });
-  }
-  function moveStepDown(idx: number) {
-    setInstructionsSteps((s) => {
-      if (idx >= s.length - 1) return s;
-      const copy = [...s];
-      const tmp = copy[idx + 1];
-      copy[idx + 1] = copy[idx];
-      copy[idx] = tmp;
-      return copy;
     });
   }
 
-  function addIngredientToRecipe(recipeId: string) {
-    const txt = newIngredient.trim();
-    if (!txt) return;
-    const ing: Ingredient = {
+  function handleAddIngredient(recipeId: string) {
+    if (!newIngredient.name.trim()) return;
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+    const ingredient: Ingredient = {
       id: uid(),
-      title: txt,
-      section: newIngredientSection,
+      title: newIngredient.name,
+      section: newIngredient.section,
+      count: newIngredient.count ? parseFloat(newIngredient.count) : undefined,
+      unit: newIngredient.unit || undefined,
     };
-    // If we're currently editing the same recipe in the form, update the formIngredients
-    if (editingId && editingId === recipeId && showForm) {
-      setFormIngredients((prev) => [...prev, ing]);
-    } else {
-      setRecipes((r) =>
-        r.map((rc) =>
-          rc.id === recipeId
-            ? { ...rc, ingredients: [...rc.ingredients, ing] }
-            : rc
-        )
-      );
-    }
-    setNewIngredient("");
+    handleUpdateRecipe(recipeId, { ingredients: [...recipe.ingredients, ingredient] });
+    setNewIngredient({ name: "", section: "Pantry", count: "", unit: "" });
   }
 
-  function removeIngredient(recipeId: string, idx: number) {
-    setRecipes((r) =>
-      r.map((rc) =>
-        rc.id === recipeId
-          ? { ...rc, ingredients: rc.ingredients.filter((_, i) => i !== idx) }
-          : rc
-      )
-    );
+  function handleUpdateIngredient(recipeId: string, ingredientId: string, title: string, section: string, count?: number, unit?: string) {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+    const updated = recipe.ingredients.map((ing) => (ing.id === ingredientId ? { ...ing, title, section, count, unit } : ing));
+    handleUpdateRecipe(recipeId, { ingredients: updated });
+    setEditingIngredientId(null);
   }
 
-  async function updateIngredientInRecipe(
-    recipeId: string,
-    idx: number,
-    title: string,
-    section: string
-  ) {
-    const rec = recipes.find((x) => x.id === recipeId);
-    if (!rec) return;
+  function handleDeleteIngredient(recipeId: string, ingredientId: string) {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+    const updated = recipe.ingredients.filter((ing) => ing.id !== ingredientId);
+    handleUpdateRecipe(recipeId, { ingredients: updated });
+  }
 
-    const updatedIngredients = rec.ingredients.map((ing, i) =>
-      i === idx ? { ...ing, title, section } : ing
-    );
+  function toggleStepHighlight(recipeId: string, stepIndex: number) {
+    setHighlightedSteps((prev) => {
+      const current = prev[recipeId] || new Set();
+      const updated = new Set(current);
+      if (updated.has(stepIndex)) {
+        updated.delete(stepIndex);
+      } else {
+        updated.add(stepIndex);
+      }
+      return { ...prev, [recipeId]: updated };
+    });
+  }
 
-    try {
-      await apiUpdateRecipe(recipeId, { ingredients: updatedIngredients });
-      setRecipes((r) =>
-        r.map((rc) =>
-          rc.id === recipeId ? { ...rc, ingredients: updatedIngredients } : rc
-        )
-      );
-    } catch (e) {
-      console.error("Failed to update ingredient:", e);
+  function moveStepUp(recipeId: string, stepIndex: number) {
+    if (stepIndex <= 0) return;
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe || !recipe.instructions) return;
+    
+    const newInstructions = [...recipe.instructions];
+    [newInstructions[stepIndex - 1], newInstructions[stepIndex]] = [newInstructions[stepIndex], newInstructions[stepIndex - 1]];
+    
+    handleUpdateRecipe(recipeId, { instructions: newInstructions });
+  }
+
+  function moveStepDown(recipeId: string, stepIndex: number) {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe || !recipe.instructions || stepIndex >= recipe.instructions.length - 1) return;
+    
+    const newInstructions = [...recipe.instructions];
+    [newInstructions[stepIndex], newInstructions[stepIndex + 1]] = [newInstructions[stepIndex + 1], newInstructions[stepIndex]];
+    
+    handleUpdateRecipe(recipeId, { instructions: newInstructions });
+  }
+
+  function deleteStep(recipeId: string, stepIndex: number) {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe || !recipe.instructions) return;
+    
+    const newInstructions = recipe.instructions.filter((_, i) => i !== stepIndex);
+    handleUpdateRecipe(recipeId, { instructions: newInstructions });
+  }
+
+  function updateStepText(recipeId: string, stepIndex: number, newText: string) {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe || !recipe.instructions) return;
+    
+    const newInstructions = recipe.instructions.map((step, i) => i === stepIndex ? newText : step);
+    handleUpdateRecipe(recipeId, { instructions: newInstructions });
+    setEditingStepId(null);
+    setEditingStepText("");
+  }
+
+  function addNewStep(recipeId: string) {
+    if (!newStepText.trim()) return;
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+    
+    const newInstructions = [...(recipe.instructions || []), newStepText.trim()];
+    handleUpdateRecipe(recipeId, { instructions: newInstructions });
+    setNewStepText("");
+  }
+
+  function handleCreateRecipe() {
+    if (!createRecipeTitle.trim()) {
+      alert("Please enter a recipe title");
+      return;
     }
+
+    const recipe: Recipe = {
+      id: uid(),
+      title: createRecipeTitle.trim(),
+      link: createRecipeLink.trim() || undefined,
+      instructions: createRecipeSteps.length > 0 ? createRecipeSteps : undefined,
+      ingredients: [],
+      planned: false,
+      stepTimers: {},
+    };
+
+    apiCreateRecipe(recipe).then(() => {
+      setRecipes([recipe, ...recipes]);
+      setShowCreateModal(false);
+      setCreateRecipeTitle("");
+      setCreateRecipeLink("");
+      setCreateRecipeSteps([]);
+      setCreateStepInput("");
+    }).catch((e) => {
+      console.error("Failed to create recipe:", e);
+      alert("Failed to save recipe. Please try again.");
+    });
+  }
+
+  function addCreateStep() {
+    if (!createStepInput.trim()) return;
+    setCreateRecipeSteps([...createRecipeSteps, createStepInput.trim()]);
+    setCreateStepInput("");
+  }
+
+  function removeCreateStep(index: number) {
+    setCreateRecipeSteps(createRecipeSteps.filter((_, i) => i !== index));
+  }
+
+  function moveCreateStepUp(index: number) {
+    if (index <= 0) return;
+    const newSteps = [...createRecipeSteps];
+    [newSteps[index - 1], newSteps[index]] = [newSteps[index], newSteps[index - 1]];
+    setCreateRecipeSteps(newSteps);
+  }
+
+  function moveCreateStepDown(index: number) {
+    if (index >= createRecipeSteps.length - 1) return;
+    const newSteps = [...createRecipeSteps];
+    [newSteps[index], newSteps[index + 1]] = [newSteps[index + 1], newSteps[index]];
+    setCreateRecipeSteps(newSteps);
   }
 
   function pushIngredientsToGrocery(recipeId: string) {
-    const rec = recipes.find((r) => r.id === recipeId);
-    if (!rec) return;
-    // Try API push first; if it fails, fall back to localStorage push
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+    
     apiPushIngredients(recipeId).then((ok) => {
       if (ok) {
         try {
@@ -572,741 +506,699 @@ export default function RecipesModule() {
         } catch (e) {
           console.warn("grocery dispatch failed", e);
         }
-        const msg = `Added ${rec.ingredients.length} ingredient${rec.ingredients.length === 1 ? "" : "s"} to Grocery`;
-        setPushMessage(msg);
-        setTimeout(() => setPushMessage(null), 3000);
-        setRecipes((r) =>
-          r.map((rc) => (rc.id === recipeId ? { ...rc, planned: true } : rc))
-        );
+        alert(`Added ${recipe.ingredients.length} ingredient${recipe.ingredients.length === 1 ? "" : "s"} to Grocery`);
       } else {
-        // fallback to local behavior
-        try {
-          const raw = localStorage.getItem("groceryLists");
-          let lists: Record<string, any[]> = {};
-          if (raw) lists = JSON.parse(raw);
-          // add each ingredient into its configured section and dedupe per-section
-          const modified = new Set<string>();
-          rec.ingredients.forEach((i) => {
-            const section = (i && (i as any).section) || "Pantry";
-            if (!lists[section]) lists[section] = [];
-            lists[section].push({
-              id: uid(),
-              title: (i as any).title || String(i),
-              done: false,
-            });
-            modified.add(section);
-          });
-          // dedupe titles inside modified sections
-          modified.forEach((section) => {
-            const seen = new Set<string>();
-            lists[section] = lists[section].filter((it: any) => {
-              if (seen.has(it.title)) return false;
-              seen.add(it.title);
-              return true;
-            });
-          });
-          localStorage.setItem("groceryLists", JSON.stringify(lists));
-          try {
-            window.dispatchEvent(new CustomEvent("grocery-updated"));
-          } catch (e) {
-            console.warn("grocery dispatch failed", e);
-          }
-          const msg = `Added ${rec.ingredients.length} ingredient${rec.ingredients.length === 1 ? "" : "s"} to Grocery`;
-          setPushMessage(msg);
-          setTimeout(() => setPushMessage(null), 3000);
-          setRecipes((r) =>
-            r.map((rc) => (rc.id === recipeId ? { ...rc, planned: true } : rc))
-          );
-        } catch (e) {
-          console.error(e);
-        }
+        alert("Failed to add ingredients to grocery");
       }
     });
   }
 
-  if (loading) {
-    return (
-      <div className="module-card">
-        <p>Loading recipes...</p>
-      </div>
+  function scheduleRecipeOnCalendar(recipeId: string) {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+
+    const today = new Date();
+    today.setHours(18, 0, 0, 0);
+
+    const eventData = {
+      title: recipe.title,
+      date: today.toISOString().slice(0, 10),
+      time: "18:00",
+    };
+
+    window.dispatchEvent(
+      new CustomEvent("schedule-recipe-event", {
+        detail: eventData,
+      })
     );
   }
 
+  const displayedRecipes = showPlanned ? recipes.filter((r) => r.planned) : recipes;
+
   return (
-    <div className="module-card">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <h3>Recipes</h3>
+    <div style={{ padding: 20 }}>
+      {/* HEADER WITH BUTTONS */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>        
         <div style={{ display: "flex", gap: 8 }}>
           <button
-            className="icon-btn"
-            title="New"
-            onClick={() => {
-              setEditingId(null);
-              setTitle("");
-              setLink("");
-              setInstructionsSteps([]);
-              setNewStepText("");
-              setNewIngredient("");
-            }}
-          >
-            <Icon name="plus" />
-          </button>
-          <button
-            className={`toggle-btn ${showPlannedOnly ? "active" : ""}`}
-            title={
-              showPlannedOnly ? "Showing planned only" : "Show planned only"
-            }
-            aria-pressed={showPlannedOnly}
-            onClick={() => setShowPlannedOnly((s) => !s)}
-            style={{ marginLeft: 8 }}
-          >
-            <span className="icon">
-              <Icon name="heart" />
-            </span>
-            <span style={{ fontSize: 13 }}>
-              {showPlannedOnly ? "Planned" : "Planned"}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div>
-          <button
-            className="task-add-btn"
-            onClick={() => {
-              setShowForm(true);
-              setEditingId(null);
-              setTitle("");
-              setLink("");
-              setInstructionsSteps([]);
-              setNewStepText("");
-              setFormIngredients([]);
-              setFormPlanned(false);
+            onClick={() => setShowCreateModal(true)}
+            style={{
+              padding: "8px 16px",
+              background: "#25f4ee",
+              color: "#000",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 14,
             }}
           >
             Create Recipe
           </button>
-        </div>
-      </div>
-
-      {/* Modal for create / edit form */}
-      <Modal
-        open={showForm}
-        onClose={() => {
-          setShowForm(false);
-          setFormIngredients([]);
-          setNewIngredient("");
-          setTitle("");
-          setLink("");
-          setInstructionsSteps([]);
-          setNewStepText("");
-          setEditingId(null);
-          setFormPlanned(false);
-        }}
-      >
-        <div style={{ padding: 12, maxWidth: 700 }}>
-          <h3 style={{ marginTop: 0 }}>
-            {editingId ? "Edit Recipe" : "New Recipe"}
-          </h3>
-          <input
-            className="task-input"
-            placeholder="Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <input
-            className="task-input"
-            placeholder="Link (optional)"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            style={{ marginTop: 8 }}
-          />
-          {/* Steps editor: ordered, add/remove/reorder */}
-          <div style={{ marginTop: 8 }}>
-            <strong style={{ fontSize: 13 }}>Steps</strong>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                marginTop: 8,
-                alignItems: "center",
-              }}
-            >
-              <input
-                className="task-input"
-                placeholder="New step..."
-                value={newStepText}
-                onChange={(e) => setNewStepText(e.target.value)}
-                onKeyDown={(e) => (e.key === "Enter" ? addStep() : null)}
-              />
-              <button className="task-add-btn" onClick={addStep}>
-                <Icon name="plus" />{" "}
-                <span style={{ marginLeft: 6 }}>Add Step</span>
-              </button>
-            </div>
-            <ol style={{ marginTop: 8, paddingLeft: 18 }}>
-              {instructionsSteps.map((s, idx) => (
-                <li
-                  key={idx}
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    marginTop: 6,
-                  }}
-                >
-                  <span style={{ flex: 1 }}>{s}</span>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button
-                      className="task-action-btn"
-                      type="button"
-                      onClick={() => moveStepUp(idx)}
-                      title="Move up"
-                    >
-                      <Icon name="chev-left" />
-                    </button>
-                    <button
-                      className="task-action-btn"
-                      type="button"
-                      onClick={() => moveStepDown(idx)}
-                      title="Move down"
-                    >
-                      <Icon name="chev-right" />
-                    </button>
-                    <button
-                      className="task-action-btn"
-                      type="button"
-                      onClick={() => removeStep(idx)}
-                      title="Remove"
-                    >
-                      <Icon name="trash" />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </div>
-          <div
+          <button
+            onClick={() => setShowPlanned(!showPlanned)}
             style={{
-              display: "flex",
-              gap: 8,
-              marginTop: 8,
-              alignItems: "center",
-              flexWrap: "wrap",
+              padding: "8px 16px",
+              background: showPlanned ? "#25f4ee" : "transparent",
+              color: showPlanned ? "#000" : "#25f4ee",
+              border: "1px solid #25f4ee",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 14,
             }}
           >
-            <input
-              className="task-input"
-              placeholder="Add ingredient..."
-              value={newIngredient}
-              onChange={(e) => setNewIngredient(e.target.value)}
-              onKeyDown={(e) =>
-                e.key === "Enter"
-                  ? editingId
-                    ? addIngredientToRecipe(editingId)
-                    : addIngredient()
-                  : null
-              }
-            />
-            <button
-              type="button"
-              className={`toggle-btn ${formPlanned ? "active" : ""}`}
-              onClick={() => setFormPlanned((p) => !p)}
-              title={formPlanned ? "Planned" : "Mark planned"}
-              aria-pressed={formPlanned}
-            >
-              <span className="icon">
-                <Icon name="heart" />
-              </span>
-              <span style={{ fontSize: 12 }}>
-                {formPlanned ? "Planned" : "Plan"}
-              </span>
-            </button>
-            <select
-              className="grocery-select"
-              value={newIngredientSection}
-              onChange={(e) => setNewIngredientSection(e.target.value)}
-            >
-              {SECTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <button
-              className="task-add-btn"
-              onClick={() =>
-                editingId ? addIngredientToRecipe(editingId) : addIngredient()
-              }
-            >
-              <Icon name="plus" /> <span style={{ marginLeft: 6 }}>Add</span>
-            </button>
-          </div>
-          <div
-            style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}
-          >
-            {formIngredients.map((ing, i) => (
-              <div
-                key={ing.id}
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                {editingFormIndex === i ? (
-                  <>
-                    <input
-                      value={editingFormTitle}
-                      onChange={(e) => setEditingFormTitle(e.target.value)}
-                      className="task-input"
-                      style={{ minWidth: 120 }}
-                    />
-                    <select
-                      className="grocery-select"
-                      value={editingFormSection}
-                      onChange={(e) => setEditingFormSection(e.target.value)}
-                    >
-                      {SECTIONS.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="task-action-btn"
-                      onClick={() => {
-                        setFormIngredients((fi) =>
-                          fi.map((f, idx) =>
-                            idx === i
-                              ? {
-                                  ...f,
-                                  title: editingFormTitle,
-                                  section: editingFormSection,
-                                }
-                              : f
-                          )
-                        );
-                        setEditingFormIndex(null);
-                      }}
-                    >
-                      <Icon name="check" />
-                    </button>
-                    <button
-                      type="button"
-                      className="task-action-btn"
-                      onClick={() => setEditingFormIndex(null)}
-                    >
-                      <Icon name="chev-left" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: 13 }}>{ing.title}</span>
-                    <em style={{ fontSize: 12, color: "var(--muted)" }}>
-                      {ing.section}
-                    </em>
-                    <button
-                      type="button"
-                      className="task-action-btn"
-                      onClick={() => {
-                        setEditingFormIndex(i);
-                        setEditingFormTitle(ing.title);
-                        setEditingFormSection(ing.section);
-                      }}
-                    >
-                      <Icon name="edit" />
-                    </button>
-                    <button
-                      type="button"
-                      className="task-action-btn"
-                      onClick={() =>
-                        setFormIngredients((fi) =>
-                          fi.filter((_, idx) => idx !== i)
-                        )
-                      }
-                    >
-                      <Icon name="trash" />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            {editingId ? (
-              <>
-                <button className="task-add-btn" onClick={saveEdit}>
-                  Save
-                </button>
-                <button
-                  className="task-action-btn"
-                  onClick={() => {
-                    setEditingId(null);
-                    setTitle("");
-                    setLink("");
-                    setInstructionsSteps([]);
-                    setNewStepText("");
-                    setFormIngredients([]);
-                    setShowForm(false);
-                    setFormPlanned(false);
-                  }}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <button className="task-add-btn" onClick={createRecipe}>
-                  Create Recipe
-                </button>
-                <button
-                  className="task-action-btn"
-                  onClick={() => {
-                    setShowForm(false);
-                    setFormIngredients([]);
-                    setNewIngredient("");
-                    setTitle("");
-                    setLink("");
-                    setInstructionsSteps([]);
-                    setNewStepText("");
-                    setFormPlanned(false);
-                  }}
-                >
-                  Close
-                </button>
-              </>
-            )}
-          </div>
+            {showPlanned ? "Show All" : "Show Planned"}
+          </button>
         </div>
-      </Modal>
+      </div>      
 
-      <div style={{ marginTop: 12 }}>
-        {recipes.length === 0 ? (
-          <div style={{ color: "var(--muted)" }}>No recipes yet</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {recipes
-              .filter((r) => !showPlannedOnly || r.planned)
-              .map((r) => (
-                <div
-                  key={r.id}
-                  className="recipe-list-row"
-                  style={{
-                    padding: 10,
-                    background: "rgba(255,255,255,0.02)",
-                    borderRadius: 8,
-                  }}
-                >
-                  {expandedId === r.id ? (
-                    // Expanded layout: stack title, instructions, then ingredients vertically
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: 12,
-                        }}
-                      >
-                        <div
-                          onClick={() =>
-                            setExpandedId(expandedId === r.id ? null : r.id)
-                          }
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <strong style={{ fontSize: 16 }}>{r.title}</strong>
-                          {r.link ? (
-                            <a
-                              href={r.link}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ color: "var(--accent)", fontSize: 13 }}
-                            >
-                              View
-                            </a>
-                          ) : null}
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            alignItems: "center",
-                          }}
-                        >
-                          <RecipePlanMenu recipe={r} />
+      {/* CREATE RECIPE MODAL */}
+      {showCreateModal && (
+        <>
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0,0,0,0.7)",
+              zIndex: 999,
+            }}
+            onClick={() => setShowCreateModal(false)}
+          />
+          <div
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              background: "var(--card)",
+              padding: 24,
+              borderRadius: 12,
+              maxWidth: 600,
+              width: "90%",
+              maxHeight: "80vh",
+              overflow: "auto",
+              zIndex: 1000,
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>Create Recipe</h3>
+            
+            <input
+              type="text"
+              placeholder="Recipe title"
+              value={createRecipeTitle}
+              onChange={(e) => setCreateRecipeTitle(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                marginBottom: 12,
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: 4,
+                color: "white",
+                fontSize: 14,
+              }}
+            />
+
+            <input
+              type="text"
+              placeholder="Recipe link (optional)"
+              value={createRecipeLink}
+              onChange={(e) => setCreateRecipeLink(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                marginBottom: 12,
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: 4,
+                color: "white",
+                fontSize: 14,
+              }}
+            />
+
+            <div style={{ marginBottom: 12 }}>
+              <strong style={{ fontSize: 14, display: "block", marginBottom: 8 }}>Instructions</strong>
+              
+              {createRecipeSteps.length > 0 && (
+                <ol style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
+                  {createRecipeSteps.map((step, i) => (
+                    <li key={i} style={{ marginBottom: 8, fontSize: 13 }}>
+                      <div style={{ display: "flex", alignItems: "start", gap: 8 }}>
+                        <span style={{ flex: 1 }}>{step}</span>
+                        <div style={{ display: "flex", gap: 4 }}>
                           <button
+                            onClick={() => moveCreateStepUp(i)}
                             className="task-action-btn"
-                            onClick={() => startEdit(r)}
-                            title="Edit"
+                            style={{ padding: "2px 6px", fontSize: 11 }}
+                            disabled={i === 0}
                           >
-                            <Icon name="edit" />
+                            ↑
                           </button>
                           <button
+                            onClick={() => moveCreateStepDown(i)}
                             className="task-action-btn"
-                            onClick={() => removeRecipeWithSync(r.id)}
-                            title="Delete"
+                            style={{ padding: "2px 6px", fontSize: 11 }}
+                            disabled={i === createRecipeSteps.length - 1}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            onClick={() => removeCreateStep(i)}
+                            className="task-action-btn"
+                            style={{ padding: "2px 6px", fontSize: 11 }}
                           >
                             <Icon name="trash" />
                           </button>
                         </div>
                       </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
 
-                      <div>
-                        <strong style={{ fontSize: 13 }}>Instructions</strong>
-                        <div style={{ color: "var(--muted)", marginTop: 6 }}>
-                          {Array.isArray(r.instructions) ? (
-                            <ol style={{ margin: 0, paddingLeft: 18 }}>
-                              {r.instructions.map((s, i) => {
-                                const isHighlighted =
-                                  highlightedSteps[r.id]?.has(i);
-                                return (
-                                  <li
-                                    key={i}
-                                    onClick={() => toggleStepHighlight(r.id, i)}
-                                    className={
-                                      isHighlighted
-                                        ? "recipe-step highlighted"
-                                        : "recipe-step"
-                                    }
-                                    style={{
-                                      marginTop: 6,
-                                      cursor: "pointer",
-                                      padding: "8px",
-                                      borderRadius: "6px",
-                                      transition: "all 0.2s ease",
-                                    }}
-                                  >
-                                    {s}
-                                  </li>
-                                );
-                              })}
-                            </ol>
-                          ) : (
-                            <div style={{ whiteSpace: "pre-wrap" }}>
-                              {(r.instructions as any) || ""}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="text"
+                  placeholder="Enter instruction step..."
+                  value={createStepInput}
+                  onChange={(e) => setCreateStepInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addCreateStep()}
+                  style={{
+                    flex: 1,
+                    padding: 8,
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: 4,
+                    color: "white",
+                    fontSize: 14,
+                  }}
+                />
+                <button
+                  onClick={addCreateStep}
+                  style={{
+                    padding: "8px 16px",
+                    background: "#25f4ee",
+                    color: "#000",
+                    border: "none",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    fontSize: 14,
+                  }}
+                >
+                  Add Step
+                </button>
+              </div>
+            </div>
 
-                      <div>
-                        <strong style={{ fontSize: 13 }}>Ingredients</strong>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: 8,
-                            marginTop: 6,
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button
+                onClick={handleCreateRecipe}
+                style={{
+                  flex: 1,
+                  padding: "10px 16px",
+                  background: "#25f4ee",
+                  color: "#000",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                Create Recipe
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setCreateRecipeTitle("");
+                  setCreateRecipeLink("");
+                  setCreateRecipeSteps([]);
+                  setCreateStepInput("");
+                }}
+                style={{
+                  padding: "10px 16px",
+                  background: "transparent",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 14,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* RECIPE LIST */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {displayedRecipes.map((r) => (
+          <div key={r.id} style={{ padding: 12, background: "rgba(255,255,255,0.05)", borderRadius: 8, border: r.planned ? "2px solid #25f4ee" : "1px solid rgba(255,255,255,0.1)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setExpandedRecipeId(expandedRecipeId === r.id ? null : r.id)}>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: "1rem" }}>{r.title}</h3>
+                {r.link && <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: "#25f4ee", fontSize: 12 }} onClick={(e) => e.stopPropagation()}>View</a>}
+              </div>
+              <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                {expandedRecipeId === r.id && (
+                  <button 
+                    onClick={() => setEditingRecipeId(editingRecipeId === r.id ? null : r.id)} 
+                    className="task-action-btn" 
+                    style={{ padding: "4px 8px" }}
+                  >
+                    <Icon name={editingRecipeId === r.id ? "x" : "edit"} />
+                  </button>
+                )}
+                <div style={{ position: "relative" }}>
+                  <button 
+                    onClick={() => setShowMenuForRecipe(showMenuForRecipe === r.id ? null : r.id)}
+                    className="task-action-btn" 
+                    style={{ padding: "4px 8px" }}
+                  >
+                    <Icon name="heart" />
+                  </button>
+                  
+                  {showMenuForRecipe === r.id && (
+                    <>
+                      <div
+                        style={{
+                          position: "fixed",
+                          inset: 0,
+                          zIndex: 10,
+                        }}
+                        onClick={() => setShowMenuForRecipe(null)}
+                      />
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          right: 0,
+                          marginTop: 4,
+                          background: "var(--card)",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          borderRadius: 8,
+                          padding: 8,
+                          minWidth: 200,
+                          zIndex: 20,
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => {
+                            handleUpdateRecipe(r.id, { planned: !r.planned });
+                            setShowMenuForRecipe(null);
                           }}
+                          style={{
+                            width: "100%",
+                            padding: "8px 12px",
+                            background: "transparent",
+                            border: "none",
+                            color: "#fff",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            borderRadius: 4,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                         >
-                          {r.ingredients.map((ing, idx) => (
-                            <div
-                              key={ing.id}
-                              style={{
-                                background: "rgba(255,255,255,0.03)",
-                                padding: "6px 10px",
-                                borderRadius: 8,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                              }}
-                            >
-                              {editingRecipeIndex === idx ? (
-                                <>
-                                  <input
-                                    value={editingRecipeTitle}
-                                    onChange={(e) =>
-                                      setEditingRecipeTitle(e.target.value)
-                                    }
-                                    className="task-input"
-                                    style={{ minWidth: 120 }}
-                                  />
-                                  <select
-                                    className="grocery-select"
-                                    value={editingRecipeSection}
-                                    onChange={(e) =>
-                                      setEditingRecipeSection(e.target.value)
-                                    }
-                                  >
-                                    {SECTIONS.map((s) => (
-                                      <option key={s} value={s}>
-                                        {s}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <button
-                                    className="task-action-btn"
-                                    onClick={() => {
-                                      updateIngredientInRecipe(
-                                        r.id,
-                                        idx,
-                                        editingRecipeTitle,
-                                        editingRecipeSection
-                                      );
-                                      setEditingRecipeIndex(null);
-                                    }}
-                                  >
-                                    <Icon name="check" />
-                                  </button>
-                                  <button
-                                    className="task-action-btn"
-                                    onClick={() => setEditingRecipeIndex(null)}
-                                  >
-                                    <Icon name="chev-left" />
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <span style={{ fontSize: 13 }}>
-                                    {ing.title}
-                                  </span>
-                                  <em
-                                    style={{
-                                      fontSize: 12,
-                                      color: "var(--muted)",
-                                    }}
-                                  >
-                                    {ing.section}
-                                  </em>
-                                  <div
-                                    style={{
-                                      marginLeft: "auto",
-                                      display: "flex",
-                                      gap: 8,
-                                    }}
-                                  >
-                                    <button
-                                      className="task-action-btn"
-                                      onClick={() => {
-                                        setEditingRecipeIndex(idx);
-                                        setEditingRecipeTitle(ing.title);
-                                        setEditingRecipeSection(ing.section);
-                                      }}
-                                    >
-                                      <Icon name="edit" />
-                                    </button>
-                                    <button
-                                      className="task-action-btn"
-                                      onClick={() =>
-                                        removeIngredient(r.id, idx)
-                                      }
-                                    >
-                                      <Icon name="trash" />
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ marginTop: 8 }}>
-                          <button
-                            className="task-add-btn"
-                            onClick={() => pushIngredientsToGrocery(r.id)}
-                          >
-                            Add ingredients to Grocery
-                          </button>
-                          {pushMessage ? (
-                            <div
-                              style={{
-                                marginTop: 8,
-                                color: "var(--accent)",
-                                fontSize: 13,
-                              }}
-                            >
-                              {pushMessage}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    // Compact row layout when not expanded
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
-                      <div
-                        style={{
-                          flex: 1,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          cursor: "pointer",
-                        }}
-                        onClick={() =>
-                          setExpandedId(expandedId === r.id ? null : r.id)
-                        }
-                      >
-                        <strong>{r.title}</strong>
-                        {r.link ? (
-                          <a
-                            href={r.link}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: "var(--accent)", fontSize: 13 }}
-                          >
-                            View
-                          </a>
-                        ) : null}
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "center",
-                        }}
-                      >
-                        <RecipePlanMenu recipe={r} />
-                        <button
-                          className="task-action-btn"
-                          onClick={() => startEdit(r)}
-                          title="Edit"
-                        >
-                          <Icon name="edit" />
+                          <Icon name="heart" size={16} />
+                          <span>{r.planned ? "Remove from planned" : "Mark as planned"}</span>
                         </button>
                         <button
-                          className="task-action-btn"
-                          onClick={() => removeRecipeWithSync(r.id)}
-                          title="Delete"
+                          onClick={() => {
+                            scheduleRecipeOnCalendar(r.id);
+                            setShowMenuForRecipe(null);
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "8px 12px",
+                            background: "transparent",
+                            border: "none",
+                            color: "#fff",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            borderRadius: 4,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            marginTop: 4,
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                         >
-                          <Icon name="trash" />
+                          <Icon name="calendar" size={16} />
+                          <span>Schedule on calendar</span>
                         </button>
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
-              ))}
+                <button onClick={() => handleDeleteRecipe(r.id)} className="task-action-btn" style={{ padding: "4px 8px" }}><Icon name="trash" /></button>
+              </div>
+            </div>
+
+            {expandedRecipeId === r.id && (
+              <div style={{ marginTop: 12 }}>
+                {r.ingredients && r.ingredients.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong style={{ fontSize: 12 }}>Ingredients</strong>
+                    <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6 }}>
+                      {[...r.ingredients].sort((a: any, b: any) => a.section.localeCompare(b.section)).map((ing: any) => (
+                        <div key={ing.id} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "6px 8px", background: "rgba(0,0,0,0.2)", borderRadius: 4, minWidth: 0 }}>
+                          {editingIngredientId === ing.id ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                              <input
+                                type="text"
+                                value={editingIngredientTitle}
+                                onChange={(e) => setEditingIngredientTitle(e.target.value)}
+                                placeholder="Ingredient name"
+                                style={{ width: "100%", padding: 4, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
+                              />
+                              <div style={{ display: "flex", gap: 4 }}>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={editingIngredientCount}
+                                  onChange={(e) => setEditingIngredientCount(e.target.value)}
+                                  placeholder="Qty"
+                                  style={{ width: "50px", padding: 4, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
+                                />
+                                <select
+                                  value={editingIngredientUnit}
+                                  onChange={(e) => setEditingIngredientUnit(e.target.value)}
+                                  style={{ flex: 1, padding: 4, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
+                                >
+                                  {UNITS.map((u) => (
+                                    <option key={u || "none"} value={u}>{u || "(none)"}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <select
+                                value={editingIngredientSection}
+                                onChange={(e) => setEditingIngredientSection(e.target.value)}
+                                style={{ width: "100%", padding: 4, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
+                              >
+                                {SECTIONS.map((s) => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
+                              <div style={{ display: "flex", gap: 4 }}>
+                                <button
+                                  onClick={() => handleUpdateIngredient(r.id, ing.id, editingIngredientTitle, editingIngredientSection, editingIngredientCount ? parseFloat(editingIngredientCount) : undefined, editingIngredientUnit || undefined)}
+                                  className="task-action-btn"
+                                  style={{ flex: 1, padding: "4px 8px", fontSize: 11 }}
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  onClick={() => setEditingIngredientId(null)}
+                                  className="task-action-btn"
+                                  style={{ flex: 1, padding: "4px 8px", fontSize: 11 }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, color: "#ccc", wordBreak: "break-word" }}>
+                                  {ing.count && <span style={{ fontWeight: "600" }}>{ing.count} </span>}
+                                  {ing.unit && <span>{ing.unit} </span>}
+                                  {ing.title}
+                                </div>
+                                <div style={{ fontSize: 10, color: "#888" }}>{ing.section}</div>
+                              </div>
+                              {editingRecipeId === r.id && (
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  <button
+                                    onClick={() => {
+                                      setEditingIngredientId(ing.id);
+                                      setEditingIngredientTitle(ing.title);
+                                      setEditingIngredientSection(ing.section);
+                                      setEditingIngredientCount(ing.count ? String(ing.count) : "");
+                                      setEditingIngredientUnit(ing.unit || "");
+                                    }}
+                                    className="task-action-btn"
+                                    style={{ padding: "4px 6px", fontSize: 11, flexShrink: 0 }}
+                                  >
+                                    <Icon name="edit" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteIngredient(r.id, ing.id)}
+                                    className="task-action-btn"
+                                    style={{ padding: "4px 6px", fontSize: 11, flexShrink: 0 }}
+                                  >
+                                    <Icon name="trash" />
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => pushIngredientsToGrocery(r.id)}
+                      style={{
+                        marginTop: 12,
+                        padding: "8px 16px",
+                        background: "#25f4ee",
+                        color: "#000",
+                        border: "none",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        fontSize: 14,
+                        width: "100%",
+                      }}
+                    >
+                      Add ingredients to Grocery
+                    </button>
+                  </div>
+                )}
+
+                {editingRecipeId === r.id && (
+                  <div style={{ marginBottom: 12, padding: 10, background: "rgba(0,0,0,0.2)", borderRadius: 6 }}>
+                    <strong style={{ fontSize: 12 }}>Add Ingredient</strong>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                      <input
+                        type="text"
+                        placeholder="Ingredient name"
+                        value={newIngredient.name}
+                        onChange={(e) => setNewIngredient({ ...newIngredient, name: e.target.value })}
+                        style={{ width: "100%", padding: 6, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
+                      />
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="Quantity"
+                          value={newIngredient.count}
+                          onChange={(e) => setNewIngredient({ ...newIngredient, count: e.target.value })}
+                          style={{ width: "80px", padding: 6, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
+                        />
+                        <select
+                          value={newIngredient.unit}
+                          onChange={(e) => setNewIngredient({ ...newIngredient, unit: e.target.value })}
+                          style={{ flex: 1, padding: 6, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
+                        >
+                          {UNITS.map((u) => (
+                            <option key={u || "none"} value={u}>{u || "(none)"}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={newIngredient.section}
+                          onChange={(e) => setNewIngredient({ ...newIngredient, section: e.target.value })}
+                          style={{ padding: 6, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, color: "white", fontSize: 12 }}
+                        >
+                          {SECTIONS.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <button onClick={() => handleAddIngredient(r.id)} style={{ padding: "6px 10px", background: "#25f4ee", color: "#000", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>Add Ingredient</button>
+                    </div>
+                  </div>
+                )}
+
+                {r.instructions && Array.isArray(r.instructions) && (
+                  <div>
+                    <strong style={{ fontSize: 12 }}>Instructions</strong>
+                    <ol style={{ margin: "6px 0 0 0", paddingLeft: 18, fontSize: 13 }}>
+                      {r.instructions.map((step, i) => {
+                        const isHighlighted = highlightedSteps[r.id]?.has(i);
+                        const isEditingThisStep = editingStepId === `${r.id}-${i}`;
+                        return (
+                          <li 
+                            key={i} 
+                            onClick={() => !editingRecipeId && toggleStepHighlight(r.id, i)} 
+                            className={isHighlighted ? "recipe-step highlighted" : "recipe-step"} 
+                            style={{ marginTop: 6, cursor: editingRecipeId ? "default" : "pointer", padding: "6px", borderRadius: "6px", transition: "all 0.2s ease" }}
+                          >
+                            {isEditingThisStep ? (
+                              <div>
+                                <textarea
+                                  value={editingStepText}
+                                  onChange={(e) => setEditingStepText(e.target.value)}
+                                  style={{ 
+                                    width: "100%", 
+                                    minHeight: "90px",
+                                    padding: 6, 
+                                    background: "rgba(255,255,255,0.1)", 
+                                    border: "1px solid rgba(255,255,255,0.2)", 
+                                    borderRadius: 4, 
+                                    color: "white", 
+                                    fontSize: 13,
+                                    fontFamily: "inherit",
+                                    resize: "vertical"
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateStepText(r.id, i, editingStepText);
+                                    }}
+                                    className="task-action-btn"
+                                    style={{ padding: "4px 8px", fontSize: 11 }}
+                                  >
+                                    ✓ Save
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingStepId(null);
+                                      setEditingStepText("");
+                                    }}
+                                    className="task-action-btn"
+                                    style={{ padding: "4px 8px", fontSize: 11 }}
+                                  >
+                                    ✕ Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div>{step}</div>
+                                <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+                                  <StepTimerComponent recipe={r} stepIndex={i} onUpdate={handleUpdateRecipe} />
+                                  {editingRecipeId === r.id && (
+                                    <div style={{ display: "flex", gap: 4 }}>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingStepId(`${r.id}-${i}`);
+                                          setEditingStepText(step);
+                                        }}
+                                        className="task-action-btn"
+                                        style={{ padding: "4px 8px", fontSize: "0.85rem" }}
+                                      >
+                                        <Icon name="edit" />
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          moveStepUp(r.id, i);
+                                        }}
+                                        className="task-action-btn"
+                                        style={{ padding: "4px 8px", fontSize: "0.85rem" }}
+                                        disabled={i === 0}
+                                      >
+                                        ↑
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          moveStepDown(r.id, i);
+                                        }}
+                                        className="task-action-btn"
+                                        style={{ padding: "4px 8px", fontSize: "0.85rem" }}
+                                        disabled={i === r.instructions!.length - 1}
+                                      >
+                                        ↓
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          deleteStep(r.id, i);
+                                        }}
+                                        className="task-action-btn"
+                                        style={{ padding: "4px 8px", fontSize: "0.85rem" }}
+                                      >
+                                        <Icon name="trash" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                    
+                    {editingRecipeId === r.id && (
+                      <div style={{ marginTop: 12, padding: 10, background: "rgba(0,0,0,0.2)", borderRadius: 6 }}>
+                        <strong style={{ fontSize: 12 }}>Add Step</strong>
+                        <textarea
+                          value={newStepText}
+                          onChange={(e) => setNewStepText(e.target.value)}
+                          placeholder="Enter new instruction step..."
+                          style={{ 
+                            width: "100%", 
+                            minHeight: "90px",
+                            padding: 6, 
+                            marginTop: 6,
+                            background: "rgba(255,255,255,0.1)", 
+                            border: "1px solid rgba(255,255,255,0.2)", 
+                            borderRadius: 4, 
+                            color: "white", 
+                            fontSize: 13,
+                            fontFamily: "inherit",
+                            resize: "vertical"
+                          }}
+                        />
+                        <button 
+                          onClick={() => addNewStep(r.id)} 
+                          style={{ 
+                            padding: "6px 10px", 
+                            marginTop: 6,
+                            background: "#25f4ee", 
+                            color: "#000", 
+                            border: "none", 
+                            borderRadius: 4, 
+                            cursor: "pointer", 
+                            fontSize: 12 
+                          }}
+                        >
+                          Add Step
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
+        ))}
       </div>
+
+      <style>{`
+        .recipe-step { background: rgba(255, 255, 255, 0.02); }
+        .recipe-step:hover { background: rgba(255, 255, 255, 0.05); }
+        .recipe-step.highlighted { background: rgba(37, 244, 238, 0.15); border-left: 3px solid #25f4ee; padding-left: 9px; }
+        .task-action-btn { padding: 4px 8px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); borderRadius: 4px; color: white; cursor: pointer; fontSize: 13px; transition: all 0.2s; }
+        .task-action-btn:hover { background: rgba(255, 255, 255, 0.2); }
+      `}</style>
     </div>
   );
 }
