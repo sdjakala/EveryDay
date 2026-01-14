@@ -1076,7 +1076,7 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
                                           −
                                         </button>
                                         <div style={{ textAlign: "center", flex: 1, fontSize: 12 }}>
-                                          {set.reps}r
+                                          {set.reps} X
                                         </div>
                                         <button
                                           onClick={() =>
@@ -1125,7 +1125,7 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
                                           −
                                         </button>
                                         <div style={{ textAlign: "center", flex: 1, fontSize: 12 }}>
-                                          {set.weight}w
+                                          {set.weight} lbs
                                         </div>
                                         <button
                                           onClick={() =>
