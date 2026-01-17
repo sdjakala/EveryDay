@@ -24,7 +24,7 @@
   {
     "name": "recipes",
     "title": "Recipes",
-    "description": "Save recipes and push ingredients to grocery",
+    "description": "",
     "enabled": true,
     "minRank": 0
   }

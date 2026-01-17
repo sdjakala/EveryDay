@@ -783,7 +783,7 @@ export default function RecipesModule() {
   const allTags = getAllTags();
 
   return (
-    <div style={{ padding: 20 }}>
+    <div style={{ paddingTop: 10 }}>
       {/* HEADER */}
       <div style={{ marginBottom: "1rem" }}>                
         {/* Search Bar */}
@@ -810,7 +810,7 @@ export default function RecipesModule() {
             className="task-add-btn"
             style={{ padding: "8px 16px" }}
           >
-            <Icon name="plus" /> New Recipe
+            <Icon name="plus" /> Create New Recipe
           </button>
           <button
             onClick={() => setShowPlanned(!showPlanned)}
