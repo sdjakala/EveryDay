@@ -151,114 +151,157 @@ export default function TasksModule() {
   }
 
   if (loading) {
-    return <div>Loading tasks...</div>;
+    return (
+      <div className="module-card">
+        <p>Loading tasks...</p>
+      </div>
+    );
   }
 
   const visibleTasks = tasks.filter((t) =>
     showCompleted ? true : !t.completed
   );
 
+  const completedCount = tasks.filter(t => t.completed).length;
+
   return (
-    <div>
-      <div
+    <div className="module-card">
+      {/* Create Task Form */}
+      <form 
+        onSubmit={addTask}
         style={{
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 12,
+          gap: "0.5rem",
+          marginBottom: "1rem",
         }}
       >
-        <h3 style={{ margin: 0 }}>Tasks</h3>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {showCompleted && tasks.some((t) => t.completed) && (
-            <button
-              className="toggle-btn"
-              onClick={clearCompleted}
-              title="Delete all completed tasks"
-              style={{ backgroundColor: "var(--danger-color, #e74c3c)" }}
-            >
-              <span className="icon">
-                <Icon name="trash" />
-              </span>
-              <span style={{ fontSize: 13 }}>Clear completed</span>
-            </button>
-          )}
+        <input
+          className="task-input"
+          placeholder="Create a task..."
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <button type="submit" className="task-add-btn">
+          <Icon name="plus" />
+        </button>
+      </form>      
+
+      {/* Filter Buttons */}
+      <div style={{ 
+        display: "flex", 
+        gap: "0.5rem", 
+        marginBottom: "1rem",
+        flexWrap: "wrap"
+      }}>
+        <button
+          className={`toggle-btn ${showCompleted ? "active" : ""}`}
+          title={showCompleted ? "Showing completed" : "Show completed"}
+          aria-pressed={showCompleted}
+          onClick={() => setShowCompleted((s) => !s)}
+        >
+          <span className="icon">
+            <Icon name="check" />
+          </span>
+          <span style={{ fontSize: 13 }}>
+            {showCompleted ? "Completed" : "Show completed"}
+          </span>
+        </button>
+        
+        {showCompleted && completedCount > 0 && (
           <button
-            className={`toggle-btn ${showCompleted ? "active" : ""}`}
-            title={showCompleted ? "Showing completed" : "Show completed"}
-            aria-pressed={showCompleted}
-            onClick={() => setShowCompleted((s) => !s)}
+            className="toggle-btn"
+            onClick={clearCompleted}
+            title="Delete all completed tasks"
+            style={{ backgroundColor: "var(--danger-color, #e74c3c)" }}
           >
             <span className="icon">
-              <Icon name="check" />
+              <Icon name="trash" />
             </span>
-            <span style={{ fontSize: 13 }}>
-              {showCompleted ? "Completed" : "Show completed"}
-            </span>
+            <span style={{ fontSize: 13 }}>Clear completed</span>
           </button>
+        )}
+      </div>     
+      
+      {/* Tasks List */}
+      {visibleTasks.length === 0 ? (
+        <div style={{ 
+          textAlign: "center", 
+          padding: "2rem 1rem",
+          color: "var(--muted)",
+          fontSize: "0.9rem"
+        }}>
+          {showCompleted 
+            ? "No completed tasks yet" 
+            : "No active tasks. Create one above!"}
+        </div>
+      ) : (
+        <div className="tasks-list">
+          {visibleTasks.map((t) => (
+            <div className="task-item" key={t.id}>
+              <button
+                type="button"
+                className="task-checkbox"
+                onClick={() => toggle(t.id)}
+                aria-label={t.completed ? "Mark as incomplete" : "Mark as complete"}
+              >
+                {t.completed ? <Icon name="check" size={14} /> : null}
+              </button>
+
+              {editingId === t.id ? (
+                <input
+                  className="task-edit-input"
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  onBlur={() => saveEdit(t.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveEdit(t.id);
+                    if (e.key === "Escape") {
+                      setEditingId(null);
+                      setEditText("");
+                    }
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <div
+                  className={`task-title ${t.completed ? "completed" : ""}`}
+                  onClick={() => toggle(t.id)}
+                  style={{ cursor: "pointer", flex: 1 }}
+                >
+                  {t.title}
+                </div>
+              )}
+
+              <div className="task-actions">
+                <button
+                  className="task-action-btn"
+                  onClick={() => editingId === t.id ? saveEdit(t.id) : startEdit(t)}
+                  title={editingId === t.id ? "Save" : "Edit"}
+                >
+                  <Icon name="edit" />
+                </button>
+                <button 
+                  className="task-action-btn" 
+                  onClick={() => remove(t.id)}
+                  title="Delete"
+                >
+                  <Icon name="trash" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ marginBottom: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+            {tasks.length - completedCount} active
+            {completedCount > 0 && ` • ${completedCount} completed`}
+          </div>
         </div>
       </div>
-
-      <div className="tasks-toolbar">
-        <form className="create-task-form" onSubmit={addTask}>
-          <input
-            className="task-input"
-            placeholder="Create a task..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <button type="submit" className="task-add-btn">
-            Create
-          </button>
-        </form>
-      </div>
-
-      <div className="tasks-list">
-        {visibleTasks.map((t) => (
-          <div className="task-item" key={t.id}>
-            <div className="task-checkbox" onClick={() => toggle(t.id)}>
-              {t.completed ? <Icon name="check" size={14} /> : null}
-            </div>
-
-            {editingId === t.id ? (
-              <input
-                className="task-edit-input"
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                onBlur={() => saveEdit(t.id)}
-                onKeyDown={(e) => e.key === "Enter" && saveEdit(t.id)}
-              />
-            ) : (
-              <div
-                className={`task-title ${t.completed ? "completed" : ""}`}
-                onClick={() => toggle(t.id)}
-                style={{ cursor: "pointer", flex: 1 }}
-              >
-                {t.title}
-              </div>
-            )}
-
-            <div className="task-actions">
-              <button
-                className="task-action-btn"
-                onClick={() =>
-                  editingId === t.id ? saveEdit(t.id) : startEdit(t)
-                }
-              >
-                <Icon name="edit" />{" "}
-                <span style={{ marginLeft: 6 }}>
-                  {editingId === t.id ? "Save" : "Edit"}
-                </span>
-              </button>
-              <button className="task-action-btn" onClick={() => remove(t.id)}>
-                <Icon name="trash" />{" "}
-                <span style={{ marginLeft: 6 }}>Delete</span>
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
+    
   );
 }

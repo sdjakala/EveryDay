@@ -255,20 +255,38 @@ export default function GroceryModule() {
 
   return (
     <div className="module-card">
-      <div
+      
+
+      <div className="grocery-add" style={{ marginTop: 12 }}>
+        <input
+          className="task-input"
+          placeholder="Add grocery item..."
+          value={newText}
+          onChange={(e) => setNewText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addItem(newSection)}
+        />
+        <select
+          className="grocery-select"
+          value={newSection}
+          onChange={(e) => setNewSection(e.target.value)}
+        >
+          {sections.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <button className="task-add-btn" onClick={() => addItem(newSection)}>
+          <Icon name="plus" /> <span style={{ marginLeft: 6 }}>Add</span>
+        </button>
+        <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           gap: 12,
         }}
-      >
-        <div>
-          <h3>Grocery List</h3>
-          <div style={{ color: "var(--muted)", fontSize: 13 }}>
-            Organize items by section
-          </div>
-        </div>
+      >        
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {showCompleted &&
             Object.values(lists).some((items) =>
@@ -301,29 +319,6 @@ export default function GroceryModule() {
           </button>
         </div>
       </div>
-
-      <div className="grocery-add" style={{ marginTop: 12 }}>
-        <input
-          className="task-input"
-          placeholder="Add grocery item..."
-          value={newText}
-          onChange={(e) => setNewText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && addItem(newSection)}
-        />
-        <select
-          className="grocery-select"
-          value={newSection}
-          onChange={(e) => setNewSection(e.target.value)}
-        >
-          {sections.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <button className="task-add-btn" onClick={() => addItem(newSection)}>
-          <Icon name="plus" /> <span style={{ marginLeft: 6 }}>Add</span>
-        </button>
       </div>
 
       <div className="grocery-sections" style={{ marginTop: 14 }}>

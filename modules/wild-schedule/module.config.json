@@ -1,0 +1,6 @@
+{
+  "name": "wild-schedule",
+  "description": "Minnesota Wild hockey schedule with game scores",
+  "enabled": true,
+  "minRank": 1
+}

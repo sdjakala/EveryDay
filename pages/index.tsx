@@ -5,6 +5,7 @@ import Icon from "../components/Icon";
 
 type ModuleMeta = {
   name: string;
+  title: string;
   description: string;
   enabled: boolean;
   minRank: number;
@@ -196,7 +197,7 @@ export default function Dashboard() {
           </Link>
         </div>
       ) : (
-        <p>Welcome, {user?.name}</p>
+        <> </>
       )}
 
       {pinned
@@ -235,7 +236,7 @@ export default function Dashboard() {
                       alignItems: "center",
                     }}
                   >
-                    <h3>{mod.name}</h3>
+                    <h3>{mod.title}</h3>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button
                         className="icon-btn"
@@ -297,7 +298,7 @@ export default function Dashboard() {
                     alignItems: "center",
                   }}
                 >
-                  <h3>{mod.name}</h3>
+                  <h3>{mod.title}</h3>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       className="icon-btn"

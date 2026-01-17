@@ -1,18 +1,21 @@
 [
   {
     "name": "tasks",
+    "title": "Tasks",
     "description": "Task lists and assignments",
     "enabled": true,
     "minRank": 1
   },
   {
     "name": "calendar",
+    "title": "Calendar",
     "description": "Calendar events viewer",
     "enabled": true,
     "minRank": 0
   },
   {
     "name": "news",
+    "title": "News",  
     "description": "External news feed",
     "enabled": true,
     "minRank": 0
@@ -20,6 +23,7 @@
   ,
   {
     "name": "grocery",
+    "title": "Grocery",
     "description": "Grocery lists grouped by section",
     "enabled": true,
     "minRank": 0
@@ -27,6 +31,7 @@
   ,
   {
     "name": "recipes",
+    "title": "Recipes",
     "description": "Save recipes and push ingredients to grocery",
     "enabled": true,
     "minRank": 0
@@ -34,6 +39,7 @@
   ,
   {
     "name": "workouts",
+    "title": "Workouts",
     "description": "Workout tracking with lifts, sets, and rest timers",
     "enabled": true,
     "minRank": 0
@@ -41,6 +47,7 @@
   ,
   {
     "name": "traffic",
+    "title": "Traffic",
     "description": "Traffic routes and commute planning",
     "enabled": true,
     "minRank": 0
@@ -48,9 +55,18 @@
   ,
   {
     "name": "weather",
+    "title": "Weather",
     "description": "Current weather conditions",
     "enabled": true,
     "minRank": 0
   }
+  ,
+  {
+  "name": "wild-schedule",
+  "title": "Game Center",
+  "description": "",
+  "enabled": true,
+  "minRank": 1
+}
 
 ]
