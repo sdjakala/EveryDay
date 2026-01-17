@@ -9,18 +9,10 @@
   {
     "name": "calendar",
     "title": "Calendar",
-    "description": "Calendar events viewer",
+    "description": "",
     "enabled": true,
     "minRank": 0
   },
-  {
-    "name": "news",
-    "title": "News",  
-    "description": "External news feed",
-    "enabled": true,
-    "minRank": 0
-  }
-  ,
   {
     "name": "grocery",
     "title": "Grocery",
