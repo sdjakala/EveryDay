@@ -62,6 +62,10 @@ export default async function handler(
         duration: leg.duration.text,
         durationInTraffic: leg.duration_in_traffic?.text || leg.duration.text,
         polyline: route.overview_polyline.points,
+        originLat: route.legs[0].start_location.lat,
+        originLng: route.legs[0].start_location.lng,
+        destLat: route.legs[0].end_location.lat,
+        destLng: route.legs[0].end_location.lng,
       };
     });
 

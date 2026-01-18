@@ -183,7 +183,7 @@ export default function TasksModule() {
           style={{ flex: 1 }}
         />
         <button type="submit" className="task-add-btn">
-          <Icon name="plus" />
+          <Icon name="plus" /> Add
         </button>
       </form>      
 

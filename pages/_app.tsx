@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import type { AppProps } from "next/app";
+import 'maplibre-gl/dist/maplibre-gl.css';
 import "../styles/globals.css";
 import Layout from "../components/Layout";
 
