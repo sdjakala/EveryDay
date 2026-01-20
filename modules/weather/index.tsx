@@ -128,7 +128,7 @@ export default function WeatherModule() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
-  const [selectedLocationId, setSelectedLocationId] = useState<string>("current");
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [showLocationManager, setShowLocationManager] = useState(false);
   const [newCity, setNewCity] = useState("");
   const [newState, setNewState] = useState("");
@@ -136,11 +136,15 @@ export default function WeatherModule() {
   const [expandedAlert, setExpandedAlert] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchSavedLocations();
+    async function initialize() {
+      await fetchSavedLocations();
+    }
+    initialize();
   }, []);
 
   useEffect(() => {
-    if (selectedLocationId) {
+    // Only fetch if a location is explicitly selected
+    if (selectedLocationId && selectedLocationId !== null) {
       fetchWeatherForLocation();
     }
   }, [selectedLocationId]);
@@ -150,7 +154,13 @@ export default function WeatherModule() {
       const res = await fetch("/api/weather/locations");
       if (res.ok) {
         const data = await res.json();
-        setSavedLocations(data.locations || []);
+        const locations = data.locations || [];
+        setSavedLocations(locations);
+        
+        // If there are saved locations and no location is selected, use the first saved location
+        if (locations.length > 0 && !selectedLocationId) {
+          setSelectedLocationId(locations[0].id);
+        }
       }
     } catch (e) {
       console.error("Failed to fetch saved locations:", e);
@@ -357,7 +367,7 @@ export default function WeatherModule() {
     );
   }
 
-  if (!weather) {
+  if (!selectedLocationId || (!weather && !loading)) {
     return (
       <div className="module-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -514,7 +524,7 @@ export default function WeatherModule() {
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1 }}>
           <h3 style={{ margin: 0 }}>🌤️ Weather</h3>
           <select
-            value={selectedLocationId}
+            value={selectedLocationId || ""}
             onChange={(e) => setSelectedLocationId(e.target.value)}
             style={{
               background: "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
@@ -527,6 +537,7 @@ export default function WeatherModule() {
               minWidth: "150px"
             }}
           >
+            <option value="">Select Location</option>
             <option value="current">Current Location</option>
             {savedLocations.map((loc) => (
               <option key={loc.id} value={loc.id}>
