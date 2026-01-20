@@ -750,7 +750,7 @@ export default function WeatherModule() {
           marginBottom: "1rem",
           border: "1px solid var(--border)"
         }}>
-          <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem" }}>
+          <h4 style={{ margin: "0 0 0.25rem 0", fontSize: "0.95rem" }}>
             24-Hour Forecast
           </h4>
           
@@ -764,7 +764,7 @@ export default function WeatherModule() {
           }}>
             <div style={{ minWidth: `${hourlyForecast.length * 60}px` }}>
               {/* Time labels at top */}
-              <div style={{ display: "flex", marginBottom: "0.25rem" }}>
+              <div style={{ display: "flex", marginBottom: "0.15rem" }}>
                 {hourlyForecast.slice(0, 24).map((hour, idx) => {
                   const time = new Date(hour.time);
                   const hours = time.getHours();
@@ -788,7 +788,7 @@ export default function WeatherModule() {
               </div>
 
               {/* Weather icons row */}
-              <div style={{ marginBottom: "0.5rem" }}>                
+              <div style={{ marginBottom: "0.2rem" }}>                
                 <div style={{ display: "flex", height: "30px" }}>
                   {hourlyForecast.slice(0, 24).map((hour, idx) => (
                     <div
@@ -873,8 +873,8 @@ export default function WeatherModule() {
               </div>
 
               {/* Precipitation row */}
-              <div style={{ marginBottom: "0.75rem" }}>                
-                <div style={{ display: "flex", alignItems: "flex-end", height: "64px" }}>
+              <div style={{ marginBottom: "0.25rem" }}>                
+                <div style={{ display: "flex", alignItems: "flex-end", height: "40px" }}>
                   {hourlyForecast.slice(0, 24).map((hour, idx) => {
                     const precip = hour.precipProbability || 0;
                     const height = Math.max(precip, 3);
@@ -913,7 +913,7 @@ export default function WeatherModule() {
 
               {/* Wind row */}
               <div style={{ marginBottom: "0.75rem" }}>                
-                <div style={{ display: "flex", alignItems: "flex-end", height: "84px" }}>
+                <div style={{ display: "flex", alignItems: "flex-end", height: "40px" }}>
                   {hourlyForecast.slice(0, 24).map((hour, idx) => {
                     const maxWind = Math.max(...hourlyForecast.slice(0, 24).map(h => h.windSpeed || 0), 1);
                     const windSpeed = hour.windSpeed || 0;
@@ -964,7 +964,7 @@ export default function WeatherModule() {
 
               {/* Humidity row */}
               <div style={{ marginBottom: "0.75rem" }}>                
-                <div style={{ display: "flex", alignItems: "flex-end", height: "64px" }}>
+                <div style={{ display: "flex", alignItems: "flex-end", height: "40px" }}>
                   {hourlyForecast.slice(0, 24).map((hour, idx) => {
                     const humidity = hour.humidity || 0;
                     return (
