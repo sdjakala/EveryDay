@@ -69,6 +69,11 @@ export default function WildScheduleModule() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [hideScores, setHideScores] = useState(true);
   const sliderRef = useRef<HTMLDivElement>(null);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  // Minimum swipe distance (in px) to trigger slide
+  const minSwipeDistance = 50;
 
   useEffect(() => {
     fetchSchedule();
@@ -148,7 +153,11 @@ export default function WildScheduleModule() {
   }
 
   function formatGameDate(dateString: string): string {
-    const date = new Date(dateString);
+    // Parse the date string manually to avoid timezone conversion
+    // NHL API returns dates in format "YYYY-MM-DD"
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day); // month is 0-indexed
+    
     return date.toLocaleDateString("en-US", { 
       weekday: "short", 
       month: "short", 
@@ -252,6 +261,31 @@ export default function WildScheduleModule() {
     if (game.gameOutcome?.lastPeriodType === "OT" || game.gameOutcome?.lastPeriodType === "SO") return 'OTL';
     return 'L';
   }
+
+  // Touch event handlers for mobile swipe
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    
+    if (isLeftSwipe) {
+      slideRight();
+    }
+    if (isRightSwipe) {
+      slideLeft();
+    }
+  };
 
   if (loading && games.length === 0) {
     return (
@@ -450,13 +484,17 @@ export default function WildScheduleModule() {
             ‹
           </button>
 
-          {/* Games Slider */}
+          {/* Games Slider with touch support */}
           <div 
             ref={sliderRef}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
             style={{ 
               flex: 1,
               overflow: "hidden",
-              position: "relative"
+              position: "relative",
+              touchAction: "pan-y" // Allow vertical scrolling while capturing horizontal swipes
             }}
           >
             <div style={{ 

@@ -95,20 +95,49 @@ export default function TrafficModule() {
       return;
     }
 
+    if (selectedOrigin === selectedDestination) {
+      setError("Origin and destination must be different");
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
 
-      const origin = locations.find((l) => l.id === selectedOrigin);
-      const destination = locations.find((l) => l.id === selectedDestination);
+      let originAddress: string;
+      let originName: string;
 
-      if (!origin || !destination) {
-        setError("Invalid origin or destination");
+      // Handle current location
+      if (selectedOrigin === "CURRENT_LOCATION") {
+        if (!currentLocation) {
+          setError("Please get your current location first");
+          setLoading(false);
+          return;
+        }
+        originAddress = `${currentLocation.lat},${currentLocation.lng}`;
+        originName = "Current Location";
+      } else {
+        // Handle saved location
+        const origin = locations.find((l) => l.id === selectedOrigin);
+        if (!origin) {
+          setError("Invalid origin");
+          setLoading(false);
+          return;
+        }
+        originAddress = origin.address;
+        originName = origin.name;
+      }
+
+      // Get destination (this stays the same)
+      const destination = locations.find((l) => l.id === selectedDestination);
+      if (!destination) {
+        setError("Invalid destination");
+        setLoading(false);
         return;
       }
 
       const params = new URLSearchParams({
-        origin: origin.address,
+        origin: originAddress,
         destination: destination.address,
       });
 
@@ -120,13 +149,15 @@ export default function TrafficModule() {
       }
 
       const data = await res.json();
+      
       setRouteEstimate({
-        origin: origin.name,
+        origin: originName,
         destination: destination.name,
         routes: data.routes || [],
         timestamp: new Date().toISOString(),
       });
 
+      // Auto-select the fastest route
       setSelectedRouteIndex(0);
 
     } catch (e: any) {

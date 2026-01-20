@@ -49,7 +49,7 @@ export default function TrafficMap({
       scrollZoom: false,
       boxZoom: false,
       dragRotate: false,
-      dragPan: true,
+      dragPan: false,
       keyboard: false,
       doubleClickZoom: false,
       touchZoomRotate: false,

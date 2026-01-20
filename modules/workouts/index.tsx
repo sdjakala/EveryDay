@@ -667,7 +667,7 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
 
   return (
     <div style={{ width: "100%", boxSizing: "border-box" }}>
-      <div style={{ marginBottom: 16, width: "100%", boxSizing: "border-box" }}>
+      <div style={{ marginBottom: 16, marginTop: 5, width: "100%", boxSizing: "border-box" }}>
         <div style={{ display: "flex", gap: 8, width: "100%", boxSizing: "border-box" }}>
           <input
             type="text"
