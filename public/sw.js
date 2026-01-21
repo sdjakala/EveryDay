@@ -1,8 +1,13 @@
-const CACHE_NAME = "everyday-v1";
+// Generate version from timestamp or manually update when deploying
+const VERSION = "1.1.0"; // UPDATE THIS WHEN DEPLOYING NEW CHANGES
+const CACHE_NAME = `everyday-v${VERSION}`;
 const urlsToCache = ["/", "/styles/globals.css", "/manifest.json"];
 
-// Install event - cahce essential assets
+// Install event - cache essential assets
 self.addEventListener("install", (event) => {
+  // Force this service worker to become active immediately
+  self.skipWaiting();
+
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(urlsToCache).catch((error) => {
@@ -18,21 +23,24 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((cacheNames) => {
       return self.Promise.all(
         cacheNames.map((cacheName) => {
+          // Delete any cache that doesn't match current version
           if (cacheName !== CACHE_NAME) {
+            console.log("Deleting old cache:", cacheName);
             return caches.delete(cacheName);
           }
         })
       );
     })
   );
-  self.clients.claim();
+  // Take control of all clients immediately
+  return self.clients.claim();
 });
 
 // Fetch event - serve cached assets if available
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  //Never cache API requests
+  // Never cache API requests - always fetch fresh
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(event.request));
     return;
@@ -44,6 +52,27 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Network-first strategy for HTML pages
+  if (event.request.headers.get("accept")?.includes("text/html")) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          // Clone and cache the response
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+          return response;
+        })
+        .catch(() => {
+          // Network failed, try cache
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
+
+  // Cache-first strategy for static assets
   event.respondWith(
     caches.match(event.request).then((response) => {
       // Cache hit - return the response from the cached version
@@ -68,7 +97,7 @@ self.addEventListener("fetch", (event) => {
           // Clone the response
           const responseToCache = response.clone();
 
-          // Cachge the response
+          // Cache the response
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
           });

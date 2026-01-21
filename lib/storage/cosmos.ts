@@ -46,6 +46,7 @@ type WeatherLocation = {
   createdAt?: string;
   updatedAt?: string;
   userId?: string;
+  isDefault?: boolean;
 };
 
 import { CosmosClient } from "@azure/cosmos";
@@ -1723,6 +1724,54 @@ const cosmosAdapter = {
       }
 
       await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  async setDefaultWeatherLocation(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client
+      .database(databaseId)
+      .container(weatherLocationsContainerId);
+
+    try {
+      // First, get all user's locations and clear defaults
+      const locations = await this.getWeatherLocations(userId);
+      
+      await Promise.all(
+        locations
+          .filter(loc => loc.isDefault)
+          .map(loc => 
+            container.item(loc.id, loc.id).replace({
+              ...loc,
+              isDefault: false,
+              updatedAt: new Date().toISOString()
+            })
+          )
+      );
+
+      // Set the new default
+      const { resource: existing } = await container
+        .item(id, id)
+        .read<WeatherLocation>();
+        
+      if (!existing) return false;
+
+      // Check access
+      if (userId && existing.userId !== userId) {
+        return false;
+      }
+
+      const updated = {
+        ...existing,
+        isDefault: true,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await container.item(id, id).replace(updated);
       return true;
     } catch (e: any) {
       if (e.code === 404) return false;

@@ -20,9 +20,30 @@ function registerServiceWorker() {
   }
 }
 
+function checkForUpdates() {
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then((registration) => {
+      // Check for updates every 5 minutes
+      setInterval(() => {
+        registration.update();
+      }, 5 * 60 * 1000);
+      
+      // Check immediately on page load
+      registration.update();
+    });
+
+    // Listen for new service worker waiting to activate
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      // Service worker changed, reload the page
+      window.location.reload();
+    });
+  }
+}
+
 export default function App({ Component, pageProps }: AppProps) {
   useEffect(() => {
     registerServiceWorker();
+    checkForUpdates();
   }, []);
 
   return (

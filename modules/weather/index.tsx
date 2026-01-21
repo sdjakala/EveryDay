@@ -9,6 +9,7 @@ type SavedLocation = {
   longitude: number;
   formattedAddress: string;
   createdAt?: string;
+  isDefault?: boolean;
 };
 
 type WeatherData = {
@@ -157,9 +158,10 @@ export default function WeatherModule() {
         const locations = data.locations || [];
         setSavedLocations(locations);
         
-        // If there are saved locations and no location is selected, use the first saved location
+        // Auto-select default location, or first location if no default set
         if (locations.length > 0 && !selectedLocationId) {
-          setSelectedLocationId(locations[0].id);
+          const defaultLocation = locations.find((loc: SavedLocation) => loc.isDefault);
+          setSelectedLocationId(defaultLocation?.id || locations[0].id);
         }
       }
     } catch (e) {
@@ -266,6 +268,8 @@ export default function WeatherModule() {
     }
   }
 
+  
+
   async function geocodeAndSaveLocation(e: React.FormEvent) {
     e.preventDefault();
     
@@ -324,6 +328,21 @@ export default function WeatherModule() {
       }
     } catch (e) {
       console.error("Failed to delete location:", e);
+    }
+  }
+
+  async function setDefaultLocation(id: string) {
+    try {
+      const res = await fetch(`/api/weather/locations/${id}/default`, {
+        method: "PUT",
+      });
+
+      if (res.ok) {
+        await fetchSavedLocations();
+        setSelectedLocationId(id);
+      }
+    } catch (e) {
+      console.error("Failed to set default location:", e);
     }
   }
 
@@ -412,41 +431,82 @@ export default function WeatherModule() {
         </div>
 
         {savedLocations.length > 0 && (
-          <div>
-            <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "0.5rem" }}>
-              Or select a saved location:
+          <div style={{ marginTop: "1rem" }}>
+            <div style={{ 
+              fontSize: "0.85rem", 
+              fontWeight: "600", 
+              color: "var(--muted)", 
+              marginBottom: "0.5rem" 
+            }}>
+              Saved Locations
             </div>
             {savedLocations.map((loc) => (
-              <button
+              <div
                 key={loc.id}
-                onClick={() => setSelectedLocationId(loc.id)}
-                style={{ 
-                  width: "100%", 
-                  marginBottom: "0.5rem",
-                  background: "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))",
-                  border: "1px solid rgba(255,255,255,0.03)",
+                style={{
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid var(--border)",
                   borderRadius: "8px",
-                  justifyContent: "flex-start",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
                   padding: "0.75rem",
-                  color: "#eef2f5",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(37, 244, 238, 0.3)";
-                  e.currentTarget.style.background = "linear-gradient(180deg, rgba(37, 244, 238, 0.08), rgba(37, 244, 238, 0.04))";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.03)";
-                  e.currentTarget.style.background = "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))";
+                  marginBottom: "0.5rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center"
                 }}
               >
-                <Icon name="map-pin" />
-                <span>{loc.city}, {loc.state}</span>
-              </button>
+                <div style={{ flex: 1 }}>
+                  <div style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    gap: "0.5rem",
+                    marginBottom: "0.25rem"
+                  }}>
+                    <Icon name="map-pin" />
+                    <span style={{ fontWeight: "500" }}>
+                      {loc.city}, {loc.state}
+                    </span>
+                    {loc.isDefault && (
+                      <span style={{
+                        fontSize: "0.75rem",
+                        background: "rgba(37, 244, 238, 0.2)",
+                        color: "#25f4ee",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontWeight: "600"
+                      }}>
+                        DEFAULT
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ 
+                    fontSize: "0.75rem", 
+                    color: "var(--muted)",
+                    paddingLeft: "1.5rem"
+                  }}>
+                    {loc.formattedAddress}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  {!loc.isDefault && (
+                    <button
+                      className="cal-btn"
+                      onClick={() => setDefaultLocation(loc.id)}
+                      title="Set as default"
+                      style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                    >
+                      Set Default
+                    </button>
+                  )}
+                  <button
+                    className="cal-btn"
+                    onClick={() => deleteLocation(loc.id)}
+                    title="Delete location"
+                    style={{ color: "#ff6b6b" }}
+                  >
+                    <Icon name="trash-2" />
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         )}
@@ -513,9 +573,9 @@ export default function WeatherModule() {
     );
   }
 
-  const maxTemp = weather.currentConditionsHistory.maxTemperature.degrees;
-  const minTemp = weather.currentConditionsHistory.minTemperature.degrees;
-  const currentTemp = weather.temperature.degrees;
+  const maxTemp = weather?.currentConditionsHistory.maxTemperature.degrees;
+  const minTemp = weather?.currentConditionsHistory.minTemperature.degrees;
+  const currentTemp = weather?.temperature.degrees;
 
   return (
     <div className="module-card">
@@ -537,13 +597,13 @@ export default function WeatherModule() {
               minWidth: "150px"
             }}
           >
-            <option value="">Select Location</option>
-            <option value="current">Current Location</option>
+            <option value="">Select Location</option>            
             {savedLocations.map((loc) => (
               <option key={loc.id} value={loc.id}>
                 {loc.city}, {loc.state}
               </option>
             ))}
+            <option value="current">Current Location</option>
           </select>
         </div>
         <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -641,8 +701,18 @@ export default function WeatherModule() {
                   }}
                 >
                   <span style={{ fontSize: "0.9rem" }}>
-                    {loc.city}, {loc.state}
+                    {loc.city}, {loc.state}{loc.isDefault ? " ⭐" : ""}
                   </span>
+                  {!loc.isDefault && (
+                    <button
+                      className="cal-btn"
+                      onClick={() => setDefaultLocation(loc.id)}
+                      title="Set as default"
+                      style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                    >
+                      Set Default
+                    </button>
+                  )}
                   <button
                     className="btn secondary"
                     onClick={() => deleteLocation(loc.id)}
@@ -721,13 +791,13 @@ export default function WeatherModule() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: "4rem", fontWeight: "700", lineHeight: "1" }}>
-              {Math.round(currentTemp)}°
+              {Math.round(currentTemp ?? 0)}°
             </div>
             <div style={{ fontSize: "1.1rem", marginTop: "0.5rem", color: "var(--muted)" }}>
-              {weather.weatherCondition.description.text}
+              {weather?.weatherCondition.description.text}
             </div>
             <div style={{ fontSize: "0.9rem", marginTop: "0.25rem" }}>
-              Feels like {formatTemperature(weather.feelsLikeTemperature)}
+              Feels like {weather ? formatTemperature(weather.feelsLikeTemperature) : '—'}
             </div>
             <div style={{ 
               marginTop: "0.75rem", 
@@ -735,18 +805,18 @@ export default function WeatherModule() {
               gap: "1rem", 
               fontSize: "0.9rem" 
             }}>
-              <span>H: {Math.round(maxTemp)}°</span>
-              <span>L: {Math.round(minTemp)}°</span>
+              <span>H: {Math.round(maxTemp ?? 0)}°</span>
+              <span>L: {Math.round(minTemp ?? 0)}°</span>
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
             <img 
-              src={`${weather.weatherCondition.iconBaseUri}.svg`}
-              alt={weather.weatherCondition.description.text}
+              src={`${weather?.weatherCondition.iconBaseUri}.svg`}
+              alt={weather?.weatherCondition.description.text}
               style={{ width: "100px", height: "100px" }}
             />
             <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.5rem" }}>
-              {weather.isDaytime ? "☀️ Day" : "🌙 Night"}
+              {weather?.isDaytime ? "☀️ Day" : "🌙 Night"}
             </div>
           </div>
         </div>
@@ -1052,7 +1122,7 @@ export default function WeatherModule() {
             💧 Humidity
           </div>
           <div style={{ fontSize: "1.3rem", fontWeight: "600" }}>
-            {weather.relativeHumidity}%
+            {weather?.relativeHumidity}%
           </div>
         </div>
 
@@ -1061,10 +1131,10 @@ export default function WeatherModule() {
             🌬️ Wind
           </div>
           <div style={{ fontSize: "1.3rem", fontWeight: "600" }}>
-            {weather.wind.speed.value} mph
+            {weather?.wind.speed.value} mph
           </div>
           <div style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.15rem" }}>
-            {weather.wind.direction.cardinal}
+            {weather?.wind.direction.cardinal}
           </div>
         </div>
 
@@ -1073,7 +1143,7 @@ export default function WeatherModule() {
             👁️ Visibility
           </div>
           <div style={{ fontSize: "1.3rem", fontWeight: "600" }}>
-            {weather.visibility.distance} mi
+            {weather?.visibility.distance} mi
           </div>
         </div>
 
@@ -1082,7 +1152,7 @@ export default function WeatherModule() {
             ☀️ UV Index
           </div>
           <div style={{ fontSize: "1.3rem", fontWeight: "600" }}>
-            {weather.uvIndex}
+            {weather?.uvIndex}
           </div>
         </div>
 
@@ -1091,7 +1161,7 @@ export default function WeatherModule() {
             💨 Pressure
           </div>
           <div style={{ fontSize: "1.3rem", fontWeight: "600" }}>
-            {weather.airPressure.meanSeaLevelMillibars.toFixed(0)}
+            {weather?.airPressure.meanSeaLevelMillibars.toFixed(0)}
           </div>
           <div style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.15rem" }}>
             mb
@@ -1103,7 +1173,7 @@ export default function WeatherModule() {
             💧 Dew Point
           </div>
           <div style={{ fontSize: "1.3rem", fontWeight: "600" }}>
-            {Math.round(weather.dewPoint.degrees)}°
+            {Math.round(weather ? weather.dewPoint.degrees : 0)}°
           </div>
         </div>
 
@@ -1112,7 +1182,7 @@ export default function WeatherModule() {
             ☁️ Cloud Cover
           </div>
           <div style={{ fontSize: "1.3rem", fontWeight: "600" }}>
-            {weather.cloudCover}%
+            {weather?.cloudCover}%
           </div>
         </div>
 
@@ -1121,7 +1191,7 @@ export default function WeatherModule() {
             🌧️ Rain Chance
           </div>
           <div style={{ fontSize: "1.3rem", fontWeight: "600" }}>
-            {weather.precipitation.probability.percent}%
+            {weather?.precipitation.probability.percent}%
           </div>
         </div>
       </div>
@@ -1190,7 +1260,7 @@ export default function WeatherModule() {
         color: "var(--muted)",
         marginTop: "1rem" 
       }}>
-        Last updated: {formatTime(weather.currentTime)}
+        Last updated: {weather ? formatTime(weather.currentTime) : "NA"}
       </div>
     </div>
   );

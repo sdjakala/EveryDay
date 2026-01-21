@@ -102,6 +102,7 @@ type WeatherLocation = {
   formattedAddress: string;
   createdAt?: string;
   updatedAt?: string;
+  isDefault?: boolean;
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -748,6 +749,24 @@ const memoryAdapter = {
     weatherLocations = weatherLocations.filter((loc) => loc.id !== id);
     writeJson(WEATHER_LOCATIONS_FILE, weatherLocations);
     return prev !== weatherLocations.length;
+  },
+
+  async setDefaultWeatherLocation(id: string, _userId?: string): Promise<boolean> {
+    // First, clear any existing defaults
+    weatherLocations = weatherLocations.map(loc => ({
+      ...loc,
+      isDefault: false
+    }));
+    
+    // Set the new default
+    const location = weatherLocations.find(loc => loc.id === id);
+    if (!location) return false;
+    
+    location.isDefault = true;
+    location.updatedAt = new Date().toISOString();
+    
+    writeJson(WEATHER_LOCATIONS_FILE, weatherLocations);
+    return true;
   },
 
 };

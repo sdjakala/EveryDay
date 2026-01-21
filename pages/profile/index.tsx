@@ -29,6 +29,26 @@ export default function ProfilePage() {
       });
   }, []);
 
+  async function clearAllCaches() {
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames.map(cacheName => caches.delete(cacheName))
+      );
+      
+      // Unregister service worker
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(
+          registrations.map(registration => registration.unregister())
+        );
+      }
+      
+      alert('Cache cleared! Please reload the page.');
+      window.location.reload();
+    }
+  }
+
   if (loading) {
     return (
         <div className="container">
@@ -92,6 +112,10 @@ export default function ProfilePage() {
               Logout
             </button>
           </Link>
+
+          <button onClick={clearAllCaches}>
+            Clear App Cache & Reload
+          </button>
         </div>
       </div>
   );

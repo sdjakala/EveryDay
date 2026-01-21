@@ -135,6 +135,8 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
       adapter.createWeatherLocation(payload, userId),
     deleteWeatherLocation: (id: string) =>
       adapter.deleteWeatherLocation(id, userId),
+    setDefaultWeatherLocation: (id: string) =>
+      adapter.setDefaultWeatherLocation(id, userId),
   };
 }
 
