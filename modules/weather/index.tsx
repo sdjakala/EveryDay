@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Icon from "../../components/Icon";
+import { DaylightVisualization } from './DaylightVisualization';
 
 type SavedLocation = {
   id: string;
@@ -867,6 +868,12 @@ export default function WeatherModule() {
                   );
                 })}
               </div>
+              
+              {/* Daylight Visualization Component */}
+              <DaylightVisualization 
+                astronomy={astronomy} 
+                hourlyForecast={hourlyForecast} 
+              />
 
               {/* Weather icons row */}
               <div style={{ marginBottom: "0.2rem" }}>                
@@ -994,11 +1001,11 @@ export default function WeatherModule() {
 
               {/* Wind row */}
               <div style={{ marginBottom: "0.75rem" }}>                
-                <div style={{ display: "flex", alignItems: "flex-end", height: "40px" }}>
+                <div style={{ display: "flex", alignItems: "flex-end", height: "60px" }}>
                   {hourlyForecast.slice(0, 24).map((hour, idx) => {
-                    const maxWind = Math.max(...hourlyForecast.slice(0, 24).map(h => h.windSpeed || 0), 1);
                     const windSpeed = hour.windSpeed || 0;
-                    const height = (windSpeed / maxWind) * 100;
+                    // Use fixed scale: 1 mph = 2px, capped at 60px max
+                    const heightPx = Math.min(Math.max(windSpeed * 2, 4), 60);
                     return (
                       <div
                         key={idx}
@@ -1008,7 +1015,7 @@ export default function WeatherModule() {
                           flexDirection: "column",
                           alignItems: "center",
                           justifyContent: "flex-end",
-                          height: "100%"
+                          height: "60px"
                         }}
                       >
                         {/* Wind direction arrow at top */}
@@ -1025,8 +1032,8 @@ export default function WeatherModule() {
                         {/* Wind speed bar */}
                         <div style={{
                           width: "30px",
-                          height: `${Math.max(height, 5)}%`,
-                          background: `rgba(132, 204, 22, ${Math.max(0.3, 0.3 + (height / 100) * 0.7)})`,
+                          height: `${heightPx}px`,
+                          background: `rgba(132, 204, 22, ${Math.max(0.3, Math.min(0.3 + (windSpeed / 30) * 0.7, 1))})`,
                           borderRadius: "2px 2px 0 0",
                           minHeight: "4px"
                         }} />
