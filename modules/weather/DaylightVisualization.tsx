@@ -187,25 +187,9 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
               />
             );
           });
-
-           // Determine if we start during daylight or night
-          // Check if the first hour falls within daylight (sunrise to sunset)
-          const firstHourTime = firstHour.getHours() * 60 + firstHour.getMinutes();
-          const sunriseMinutes = parseTime(astronomy.astronomy.sunrise);
-          const sunsetMinutes = parseTime(astronomy.astronomy.sunset);
-          
-          // Determine if we're starting in daylight
-          const startsInDaylight = firstHourTime >= sunriseMinutes && firstHourTime < sunsetMinutes;
           
           // Choose the appropriate background and label
-          const backgroundInfo = startsInDaylight 
-            ? { 
-                color: "#87ceeb", 
-                name: "Daylight",
-                start: astronomy.astronomy.sunrise,
-                end: astronomy.astronomy.sunset
-              }
-            : { 
+          const backgroundInfo = { 
                 color: "#0f172a", 
                 name: "Night",
                 start: astronomy.astronomy.evening.astronomical_twilight_end,
@@ -473,37 +457,7 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
           </div>
         </div>
       )}
-      
-      {/* Legend - only twilight periods */}
-      {/* <div style={{ 
-        display: "flex", 
-        flexWrap: "wrap",
-        gap: "0.5rem",
-        marginTop: "0.75rem",
-        fontSize: "0.65rem",
-        justifyContent: "center"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-          <div style={{ width: "12px", height: "12px", background: "#0f172a", borderRadius: "2px", border: "1px solid rgba(255,255,255,0.3)" }} />
-          <span>Night</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-          <div style={{ width: "12px", height: "12px", background: "#1e293b", borderRadius: "2px", border: "1px solid rgba(255,255,255,0.3)" }} />
-          <span>Astronomical</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-          <div style={{ width: "12px", height: "12px", background: "#334155", borderRadius: "2px", border: "1px solid rgba(255,255,255,0.3)" }} />
-          <span>Nautical</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-          <div style={{ width: "12px", height: "12px", background: "#64748b", borderRadius: "2px", border: "1px solid rgba(255,255,255,0.3)" }} />
-          <span>Civil</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-          <div style={{ width: "12px", height: "12px", background: "#87ceeb", borderRadius: "2px", border: "1px solid rgba(255,255,255,0.3)" }} />
-          <span>Daylight</span>
-        </div>
-      </div> */}
+     
     </div>
   );
 }
