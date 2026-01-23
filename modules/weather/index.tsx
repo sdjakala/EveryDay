@@ -245,17 +245,43 @@ export default function WeatherModule() {
         throw new Error(errorData.error || "Failed to fetch weather");
       }
 
-      const weatherData = await weatherRes.json();
-      setWeather(weatherData);
+      let weatherData = await weatherRes.json();
 
       // Optional data - don't fail if unavailable
       if (astronomyRes.ok) {
         const astronomyData = await astronomyRes.json();
         setAstronomy(astronomyData);
+        
+        // Fix isDaytime by comparing against actual sunrise/sunset times
+        if (astronomyData?.astronomy && weatherData?.currentTime) {
+          // Google's currentTime is ISO format: "2025-01-23T19:00:00-06:00"
+          // Astronomy times are HH:MM format: "07:32", "17:15"
+          
+          // Extract local time from Google's ISO timestamp
+          const currentDate = new Date(weatherData.currentTime);
+          const currentHours = currentDate.getHours();
+          const currentMinutes = currentDate.getMinutes();
+          const currentTimeMinutes = currentHours * 60 + currentMinutes;
+          
+          // Parse astronomy sunrise/sunset times
+          const parseTime = (time: string) => {
+            const [h, m] = time.split(':').map(Number);
+            return h * 60 + m;
+          };
+          
+          const sunriseMinutes = parseTime(astronomyData.astronomy.sunrise);
+          const sunsetMinutes = parseTime(astronomyData.astronomy.sunset);
+          
+          // It's daytime if current time is between sunrise and sunset
+          weatherData.isDaytime = currentTimeMinutes >= sunriseMinutes && currentTimeMinutes < sunsetMinutes;
+          
+        }
       } else {
         console.warn("Failed to fetch astronomy data");
         setAstronomy(null);
       }
+      
+      setWeather(weatherData);
 
       if (hourlyRes.ok) {
         const hourlyData = await hourlyRes.json();
@@ -911,7 +937,7 @@ export default function WeatherModule() {
 
               {/* Temperature row */}
               <div style={{ marginBottom: "0.15rem" }}>                
-                <div style={{ position: "relative", height: "60px" }}>
+                <div style={{ position: "relative", height: "40px" }}>
                   <div style={{ display: "flex" }}>
                     {hourlyForecast.slice(0, 24).map((hour, idx) => (
                       <div
@@ -1061,7 +1087,7 @@ export default function WeatherModule() {
                 </div>
               </div>
 
-              {/* Barometric Pressure row */}
+              {/* Barometric Pressure Line Chart */}
               <div style={{ marginBottom: "0.25rem" }}>
                 {(() => {
                   // Find min and max pressure for scaling
@@ -1071,7 +1097,7 @@ export default function WeatherModule() {
                   const pressureRange = maxPressure - minPressure || 10; // Prevent division by zero
                   
                   // Create SVG path for line chart
-                  const chartHeight = 60;
+                  const chartHeight = 50;
                   const chartWidth = 24 * 60; // 60px per hour
                   
                   const points = hourlyForecast.slice(0, 24).map((hour, idx) => {
@@ -1171,7 +1197,7 @@ export default function WeatherModule() {
                     </>
                   );
                 })()}
-              </div>
+              </div> 
 
               {/* Humidity row */}
               <div style={{ marginBottom: "0.25rem" }}>                

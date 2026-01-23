@@ -58,19 +58,13 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
   return (
     <div style={{ marginBottom: "1rem", position: "relative" }}>
       <div style={{ 
-        height: "50px", 
+        height: "40px", 
         position: "relative",
         borderRadius: "4px",
         overflow: "hidden"
       }}>
         {/* Render daylight periods as colored bands based on exact times */}
         {(() => {
-          // Helper function to parse HH:MM time string to minutes since midnight
-          const parseTime = (time: string) => {
-            const [h, m] = time.split(':').map(Number);
-            return h * 60 + m;
-          };
-          
           // Get the time range from hourly forecast (first and last hour)
           const firstHour = new Date(hourlyForecast[0].time);
           const lastHour = new Date(hourlyForecast[hourlyForecast.length - 1].time);
@@ -81,16 +75,19 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
           const endTimestamp = lastHour.getTime() + (30 * 60 * 1000);
           const totalMilliseconds = endTimestamp - startTimestamp;
           
+          // Check if we cross midnight (next day periods needed)
+          const crossesMidnight = lastHour.getDate() !== firstHour.getDate();
+          
           // Helper to convert a time string to position in our display
-          const getPositionPercent = (timeStr: string) => {
+          const getPositionPercent = (timeStr: string, useNextDay: boolean = false) => {
             const [h, m] = timeStr.split(':').map(Number);
             
-            // Create a date for this time, handling which day it's on
+            // Create a date for this time
             let eventDate = new Date(firstHour);
             eventDate.setHours(h, m, 0, 0);
             
-            // If the event time is before the start time, it must be on the next day
-            if (eventDate.getTime() < startTimestamp) {
+            // If useNextDay is true, explicitly use next day
+            if (useNextDay) {
               eventDate.setDate(eventDate.getDate() + 1);
             }
             
@@ -100,69 +97,125 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
             return (offsetMilliseconds / totalMilliseconds) * 100;
           };
           
-          // Define all the specific twilight/day periods with their exact times
-          const specificPeriods = [
+          // Define periods for TODAY (current day)
+          const todayPeriods = [
             {
-              name: "Astronomical Twilight",
+              name: "Astronomical Twilight (Morning)",
               start: astronomy.astronomy.morning.astronomical_twilight_begin,
               end: astronomy.astronomy.morning.astronomical_twilight_end,
-              color: "#1e293b"
+              color: "#1e293b",
+              zIndex: 2,
+              useNextDay: false
             },
             {
-              name: "Nautical Twilight",
+              name: "Nautical Twilight (Morning)",
               start: astronomy.astronomy.morning.nautical_twilight_begin,
               end: astronomy.astronomy.morning.nautical_twilight_end,
-              color: "#334155"
+              color: "#334155",
+              zIndex: 3,
+              useNextDay: false
             },
             {
-              name: "Civil Twilight",
+              name: "Civil Twilight (Morning)",
               start: astronomy.astronomy.morning.civil_twilight_begin,
               end: astronomy.astronomy.morning.civil_twilight_end,
-              color: "#64748b"
+              color: "#64748b",
+              zIndex: 4,
+              useNextDay: false
             },
             {
               name: "Daylight",
               start: astronomy.astronomy.sunrise,
               end: astronomy.astronomy.sunset,
-              color: "#87ceeb"
+              color: "#87ceeb",
+              zIndex: 5,
+              useNextDay: false
             },
             {
-              name: "Civil Twilight",
+              name: "Civil Twilight (Evening)",
               start: astronomy.astronomy.evening.civil_twilight_begin,
               end: astronomy.astronomy.evening.civil_twilight_end,
-              color: "#64748b"
+              color: "#64748b",
+              zIndex: 4,
+              useNextDay: false
             },
             {
-              name: "Nautical Twilight",
+              name: "Nautical Twilight (Evening)",
               start: astronomy.astronomy.evening.nautical_twilight_begin,
               end: astronomy.astronomy.evening.nautical_twilight_end,
-              color: "#334155"
+              color: "#334155",
+              zIndex: 3,
+              useNextDay: false
             },
             {
-              name: "Astronomical Twilight",
+              name: "Astronomical Twilight (Evening)",
               start: astronomy.astronomy.evening.astronomical_twilight_begin,
               end: astronomy.astronomy.evening.astronomical_twilight_end,
-              color: "#1e293b"
+              color: "#1e293b",
+              zIndex: 2,
+              useNextDay: false
             }
           ];
           
-          // First, render all specific periods
-          const renderedPeriods = specificPeriods.map((period, idx) => {
-            const startPercent = getPositionPercent(period.start);
-            const endPercent = getPositionPercent(period.end);
+          // Add TOMORROW's morning periods if we cross midnight
+          const allPeriods = [...todayPeriods];
+          
+          if (crossesMidnight) {
+            // Add tomorrow's morning periods
+            allPeriods.push(
+              {
+                name: "Astronomical Twilight (Morning)",
+                start: astronomy.astronomy.morning.astronomical_twilight_begin,
+                end: astronomy.astronomy.morning.astronomical_twilight_end,
+                color: "#1e293b",
+                zIndex: 2,
+                useNextDay: true
+              },
+              {
+                name: "Nautical Twilight (Morning)",
+                start: astronomy.astronomy.morning.nautical_twilight_begin,
+                end: astronomy.astronomy.morning.nautical_twilight_end,
+                color: "#334155",
+                zIndex: 3,
+                useNextDay: true
+              },
+              {
+                name: "Civil Twilight (Morning)",
+                start: astronomy.astronomy.morning.civil_twilight_begin,
+                end: astronomy.astronomy.morning.civil_twilight_end,
+                color: "#64748b",
+                zIndex: 4,
+                useNextDay: true
+              },
+              {
+                name: "Daylight (Next Day)",
+                start: astronomy.astronomy.sunrise,
+                end: astronomy.astronomy.sunset,
+                color: "#87ceeb",
+                zIndex: 5,
+                useNextDay: true
+              }
+            );
+          }
+          
+          // Render all periods
+          const renderedPeriods = allPeriods.map((period, idx) => {
+            const startPercent = getPositionPercent(period.start, period.useNextDay);
+            const endPercent = getPositionPercent(period.end, period.useNextDay);
             
-            // Only render if the period is visible in our range
-            if (endPercent < 0 || startPercent > 100) return null;
-            
-            const leftPercent = Math.max(0, startPercent);
-            const rightPercent = Math.min(100, endPercent);
+            // Clamp to visible range [0, 100]
+            const leftPercent = Math.max(0, Math.min(100, startPercent));
+            const rightPercent = Math.max(0, Math.min(100, endPercent));
             const widthPercent = rightPercent - leftPercent;
             
-            if (widthPercent <= 0) return null;
+            // Don't render if width is zero or negative, or completely outside range
+            if (widthPercent <= 0 || endPercent < 0 || startPercent > 100) {
+              return null;
+            }
             
             return (
               <div
-                key={`${period.name}-${idx}`}
+                key={`${period.name}-${idx}-${period.useNextDay ? 'next' : 'today'}`}
                 style={{
                   position: "absolute",
                   left: `${leftPercent}%`,
@@ -170,7 +223,7 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
                   height: "100%",
                   background: period.color,
                   borderRight: "1px solid rgba(255,255,255,0.05)",
-                  zIndex: 1,
+                  zIndex: period.zIndex,
                   cursor: "pointer"
                 }}
                 title={`${period.name} (${period.start}-${period.end})`}
@@ -188,15 +241,11 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
             );
           });
           
-          // Choose the appropriate background and label
-          const backgroundInfo = { 
-                color: "#0f172a", 
-                name: "Night",
-                start: astronomy.astronomy.evening.astronomical_twilight_end,
-                end: astronomy.astronomy.morning.astronomical_twilight_begin
-              };
+          // Calculate night period
+          const nightStart = astronomy.astronomy.evening.astronomical_twilight_end;
+          const nightEnd = astronomy.astronomy.morning.astronomical_twilight_begin;
           
-          // Now add Night as the background for everything else
+          // Night background - fills the entire chart
           return (
             <>
               {/* Night background - fills the entire chart */}
@@ -206,17 +255,17 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
                   left: 0,
                   width: "100%",
                   height: "100%",
-                  background: backgroundInfo.color,
-                  zIndex: 0,
+                  background: "#0f172a",
+                  zIndex: 1,
                   cursor: "pointer"
                 }}
-                title={backgroundInfo.name}
+                title={`Night (${nightStart}-${nightEnd})`}
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedPeriod({
-                    name: backgroundInfo.name,
-                    start: backgroundInfo.start,
-                    end: backgroundInfo.end,
+                    name: "Night",
+                    start: nightStart,
+                    end: nightEnd,
                     x: e.clientX,
                     y: e.clientY
                   });
@@ -230,7 +279,7 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
         
         {/* Time labels at key hours */}
         {hourlyForecast.slice(0, 24).map((hour, idx) => {
-          if (idx % 3 !== 0) return null; // Show every 3 hours
+          if (idx % 3 !== 0) return null;
           
           const hourTime = new Date(hour.time);
           const hours = hourTime.getHours();
@@ -259,17 +308,17 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
         {(() => {
           const firstHour = new Date(hourlyForecast[0].time);
           const lastHour = new Date(hourlyForecast[hourlyForecast.length - 1].time);
-          // Adjust by -30 minutes to center on hour markers
           const startTimestamp = firstHour.getTime() - (30 * 60 * 1000);
           const endTimestamp = lastHour.getTime() + (30 * 60 * 1000);
           const totalMilliseconds = endTimestamp - startTimestamp;
+          const crossesMidnight = lastHour.getDate() !== firstHour.getDate();
           
-          const getPositionPercent = (timeStr: string) => {
+          const getPositionPercent = (timeStr: string, useNextDay: boolean = false) => {
             const [h, m] = timeStr.split(':').map(Number);
             let eventDate = new Date(firstHour);
             eventDate.setHours(h, m, 0, 0);
             
-            if (eventDate.getTime() < startTimestamp) {
+            if (useNextDay) {
               eventDate.setDate(eventDate.getDate() + 1);
             }
             
@@ -279,25 +328,33 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
             return (offsetMilliseconds / totalMilliseconds) * 100;
           };
           
-          const events = [
-            { time: astronomy.astronomy.sunrise, text: "Sunrise", color: "#fb923c" },
-            { time: astronomy.astronomy.solar_noon, text: "Solar Noon", color: "#fbbf24" },
-            { time: astronomy.astronomy.sunset, text: "Sunset", color: "#fb923c" },
-            { time: astronomy.astronomy.moonrise, text: "Moonrise", color: "#000000" },
-            { time: astronomy.astronomy.moonset, text: "Moonset", color: "#bebebeff" },
+          const todayEvents = [
+            { time: astronomy.astronomy.sunrise, text: "Sunrise", color: "#fb923c", useNextDay: false },
+            { time: astronomy.astronomy.solar_noon, text: "Solar Noon", color: "#fbbf24", useNextDay: false },
+            { time: astronomy.astronomy.sunset, text: "Sunset", color: "#fb923c", useNextDay: false },
+            { time: astronomy.astronomy.moonrise, text: "Moonrise", color: "#9333ea", useNextDay: false },
+            { time: astronomy.astronomy.moonset, text: "Moonset", color: "#9333ea", useNextDay: false },
           ];
           
-          return events.map((event, idx) => {
-            const leftPercent = getPositionPercent(event.time);
+          const allEvents = [...todayEvents];
+          
+          // Add tomorrow's sunrise if we cross midnight
+          if (crossesMidnight) {
+            allEvents.push(
+              { time: astronomy.astronomy.sunrise, text: "Sunrise", color: "#fb923c", useNextDay: true }
+            );
+          }
+          
+          return allEvents.map((event, idx) => {
+            const leftPercent = getPositionPercent(event.time, event.useNextDay);
             
-            // Only render if event is within visible range
             if (leftPercent < 0 || leftPercent > 100) {
               return null;
             }
             
             return (
               <div
-                key={`event-${idx}`}
+                key={`event-${idx}-${event.useNextDay ? 'next' : 'today'}`}
                 style={{
                   position: "absolute",
                   left: `${leftPercent}%`,
@@ -305,11 +362,10 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
                   bottom: 0,
                   width: "2px",
                   background: event.color,
-                  zIndex: 2
+                  zIndex: 10
                 }}
                 title={`${event.text} ${event.time}`}
               >
-                {/* Label in the middle of the chart - vertical stacked text */}
                 <div style={{
                   position: "absolute",
                   top: "50%",
@@ -322,7 +378,8 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  gap: "1px"
+                  gap: "1px",
+                  pointerEvents: "none"
                 }}>
                   <span>{event.text}</span>
                   <span style={{ opacity: 0.9, fontSize: "0.5rem" }}>{to12Hour(event.time)}</span>
@@ -333,7 +390,7 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
         })()}
       </div>
 
-       {/* Cloud Cover Bar */}
+      {/* Cloud Cover Bar */}
       <div style={{
         height: "10px",
         position: "relative",
@@ -344,7 +401,7 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
       }}>
         <div style={{ display: "flex", height: "100%" }}>
           {hourlyForecast.slice(0, 24).map((hour, idx) => {
-            const cloudCover = hour.cloudCover || 0; // 0-100
+            const cloudCover = hour.cloudCover || 0;
             const opacity = cloudCover / 100;
             const hourTime = new Date(hour.time);
             const hours = hourTime.getHours();
@@ -376,6 +433,8 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
           })}
         </div>
       </div>
+
+      
       
       {/* Popup for period details */}
       {selectedPeriod && (
@@ -399,13 +458,13 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
           </div>
           <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
             {!selectedPeriod.name.includes("Cloud Cover") && (
-                <>
+              <>
                 <div>Start: {to12Hour(selectedPeriod.start)}</div>
                 <div>End: {to12Hour(selectedPeriod.end)}</div>
                 <div style={{ marginTop: "0.25rem", paddingTop: "0.25rem", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-                Duration: {calculateDuration(selectedPeriod.start, selectedPeriod.end)}
+                  Duration: {calculateDuration(selectedPeriod.start, selectedPeriod.end)}
                 </div>
-                </>                
+              </>                
             )}
             
             {selectedPeriod.cloudCover !== undefined && (
@@ -437,7 +496,6 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
                    selectedPeriod.cloudCover < 90 ? "Cloudy" :
                    "Overcast"}
                 </div>
-                {/* Visual cloud cover bar */}
                 <div style={{
                   marginTop: "0.35rem",
                   height: "4px",
@@ -457,7 +515,6 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
           </div>
         </div>
       )}
-     
     </div>
   );
 }
