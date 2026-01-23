@@ -49,6 +49,8 @@ export default async function handler(
       windSpeed: hour.wind?.speed?.value || 0,
       windDirection: hour.wind?.direction?.degrees || 0,
       humidity: hour.relativeHumidity || 0,
+      cloudCover: hour.cloudCover || 0, 
+      airPressure: hour.airPressure?.meanSeaLevelMillibars || 0,
       icon: hour.weatherCondition?.iconBaseUri ? `${hour.weatherCondition.iconBaseUri}.svg` : ""
     }));
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Icon from "../../components/Icon";
 import { DaylightVisualization } from './DaylightVisualization';
 
+
 type SavedLocation = {
   id: string;
   city: string;
@@ -60,6 +61,8 @@ type HourlyForecast = {
   windSpeed: number;
   windDirection: number;
   humidity: number;
+  cloudCover: number;
+  airPressure: number;
   icon: string;
 };
 
@@ -91,10 +94,18 @@ type AstronomyData = {
     solar_noon: string;
     day_length: string;
     sun_altitude: number;
+    sun_distance: number;
+    sun_azimuth: number;
     moon_phase: string;
     moonrise: string;
     moonset: string;
+    moon_status: string;
+    moon_altitude: number;
+    moon_distance: number;
+    moon_azimuth: number;
+    moon_parallactic_angle: number;
     moon_illumination_percentage: string;
+    moon_angle: number;
     morning: {
       astronomical_twilight_begin: string;
       astronomical_twilight_end: string;
@@ -118,7 +129,7 @@ type AstronomyData = {
       nautical_twilight_end: string;
       astronomical_twilight_begin: string;
       astronomical_twilight_end: string;
-    };
+    };  
   };
 };
 
@@ -961,8 +972,8 @@ export default function WeatherModule() {
               </div>
 
               {/* Precipitation row */}
-              <div style={{ marginBottom: "0.25rem" }}>                
-                <div style={{ display: "flex", alignItems: "flex-end", height: "40px" }}>
+              <div style={{ marginBottom: "0.15rem" }}>                
+                <div style={{ display: "flex", alignItems: "flex-end", height: "30px" }}>
                   {hourlyForecast.slice(0, 24).map((hour, idx) => {
                     const precip = hour.precipProbability || 0;
                     const height = Math.max(precip, 3);
@@ -1000,8 +1011,8 @@ export default function WeatherModule() {
               </div>
 
               {/* Wind row */}
-              <div style={{ marginBottom: "0.75rem" }}>                
-                <div style={{ display: "flex", alignItems: "flex-end", height: "60px" }}>
+              <div style={{ marginBottom: "0.25rem" }}>                
+                <div style={{ display: "flex", alignItems: "flex-end", height: "40px" }}>
                   {hourlyForecast.slice(0, 24).map((hour, idx) => {
                     const windSpeed = hour.windSpeed || 0;
                     // Use fixed scale: 1 mph = 2px, capped at 60px max
@@ -1046,12 +1057,124 @@ export default function WeatherModule() {
                   })}
                 </div>
                 <div style={{ fontSize: "0.7rem", color: "var(--muted)", marginBottom: "0.25rem", paddingLeft: "4px" }}>
-                  🌬️ Wind
+                  💨 Wind
                 </div>
               </div>
 
+              {/* Barometric Pressure row */}
+              <div style={{ marginBottom: "0.25rem" }}>
+                {(() => {
+                  // Find min and max pressure for scaling
+                  const pressures = hourlyForecast.slice(0, 24).map(h => h.airPressure || 1013.25);
+                  const minPressure = Math.min(...pressures);
+                  const maxPressure = Math.max(...pressures);
+                  const pressureRange = maxPressure - minPressure || 10; // Prevent division by zero
+                  
+                  // Create SVG path for line chart
+                  const chartHeight = 60;
+                  const chartWidth = 24 * 60; // 60px per hour
+                  
+                  const points = hourlyForecast.slice(0, 24).map((hour, idx) => {
+                    const pressure = hour.airPressure || 1013.25;
+                    const x = idx * 60 + 30; // Center in each 60px segment
+                    // Invert y so higher pressure is at top
+                    const y = chartHeight - ((pressure - minPressure) / pressureRange) * (chartHeight - 10);
+                    return { x, y, pressure };
+                  });
+                  
+                  // Create SVG path string
+                  const pathData = points
+                    .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x},${point.y}`)
+                    .join(' ');
+                  
+                  return (
+                    <>
+                      <div style={{ position: "relative", height: `${chartHeight}px` }}>
+                        <svg 
+                          width={chartWidth} 
+                          height={chartHeight}
+                          style={{ position: "absolute", top: 0, left: 0 }}
+                        >
+                          {/* Grid lines */}
+                          <line 
+                            x1="0" 
+                            y1={chartHeight / 2} 
+                            x2={chartWidth} 
+                            y2={chartHeight / 2} 
+                            stroke="rgba(255,255,255,0.05)" 
+                            strokeWidth="1" 
+                          />
+                          <line 
+                            x1="0" 
+                            y1={chartHeight - 10} 
+                            x2={chartWidth} 
+                            y2={chartHeight - 10} 
+                            stroke="rgba(255,255,255,0.05)" 
+                            strokeWidth="1" 
+                          />
+                          
+                          {/* Pressure line */}
+                          <path
+                            d={pathData}
+                            fill="none"
+                            stroke="rgba(139, 92, 246, 0.8)"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          
+                          {/* Pressure points */}
+                          {points.map((point, idx) => {
+                            // If point is in top 30% of chart, show label below
+                            const showLabelBelow = point.y < chartHeight * 0.3;
+                            
+                            return (
+                              <g key={idx}>
+                                <circle
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r="3"
+                                  fill="rgba(139, 92, 246, 1)"
+                                  stroke="rgba(255, 255, 255, 0.8)"
+                                  strokeWidth="1"
+                                />
+                                {/* Pressure value - position based on height */}
+                                <text
+                                  x={point.x}
+                                  y={showLabelBelow ? point.y + 12 : point.y - 8}
+                                  fill="rgba(139, 92, 246, 1)"
+                                  fontSize="9"
+                                  fontWeight="600"
+                                  textAnchor="middle"
+                                >
+                                  {point.pressure.toFixed(0)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      </div>
+                      <div style={{ 
+                        fontSize: "0.7rem", 
+                        color: "var(--muted)", 
+                        marginBottom: "0.25rem", 
+                        paddingLeft: "4px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between"
+                      }}>
+                        <span>🌬️ Barometric Pressure (mb)</span>
+                        <span style={{ fontSize: "0.65rem", color: "rgba(139, 92, 246, 0.8)" }}>
+                          Range: {minPressure.toFixed(0)} - {maxPressure.toFixed(0)}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
               {/* Humidity row */}
-              <div style={{ marginBottom: "0.75rem" }}>                
+              <div style={{ marginBottom: "0.25rem" }}>                
                 <div style={{ display: "flex", alignItems: "flex-end", height: "40px" }}>
                   {hourlyForecast.slice(0, 24).map((hour, idx) => {
                     const humidity = hour.humidity || 0;
@@ -1112,6 +1235,10 @@ export default function WeatherModule() {
             <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
               <div style={{ width: "12px", height: "12px", background: "rgba(168, 85, 247, 0.6)", borderRadius: "2px" }} />
               <span>Humidity</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              <div style={{ width: "12px", height: "12px", background: "rgba(139, 92, 246, 0.6)", borderRadius: "2px" }} />
+              <span>Pressure</span>
             </div>
           </div>
         </div>

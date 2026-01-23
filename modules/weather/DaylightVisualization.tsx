@@ -10,6 +10,7 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
     name: string;
     start: string;
     end: string;
+    cloudCover?: number;
     x: number;
     y: number;
   } | null>(null);
@@ -186,6 +187,30 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
               />
             );
           });
+
+           // Determine if we start during daylight or night
+          // Check if the first hour falls within daylight (sunrise to sunset)
+          const firstHourTime = firstHour.getHours() * 60 + firstHour.getMinutes();
+          const sunriseMinutes = parseTime(astronomy.astronomy.sunrise);
+          const sunsetMinutes = parseTime(astronomy.astronomy.sunset);
+          
+          // Determine if we're starting in daylight
+          const startsInDaylight = firstHourTime >= sunriseMinutes && firstHourTime < sunsetMinutes;
+          
+          // Choose the appropriate background and label
+          const backgroundInfo = startsInDaylight 
+            ? { 
+                color: "#87ceeb", 
+                name: "Daylight",
+                start: astronomy.astronomy.sunrise,
+                end: astronomy.astronomy.sunset
+              }
+            : { 
+                color: "#0f172a", 
+                name: "Night",
+                start: astronomy.astronomy.evening.astronomical_twilight_end,
+                end: astronomy.astronomy.morning.astronomical_twilight_begin
+              };
           
           // Now add Night as the background for everything else
           return (
@@ -197,17 +222,17 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
                   left: 0,
                   width: "100%",
                   height: "100%",
-                  background: "#0f172a",
+                  background: backgroundInfo.color,
                   zIndex: 0,
                   cursor: "pointer"
                 }}
-                title="Night"
+                title={backgroundInfo.name}
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedPeriod({
-                    name: "Night",
-                    start: astronomy.astronomy.evening.astronomical_twilight_end,
-                    end: astronomy.astronomy.morning.astronomical_twilight_begin,
+                    name: backgroundInfo.name,
+                    start: backgroundInfo.start,
+                    end: backgroundInfo.end,
                     x: e.clientX,
                     y: e.clientY
                   });
@@ -275,7 +300,7 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
             { time: astronomy.astronomy.solar_noon, text: "Solar Noon", color: "#fbbf24" },
             { time: astronomy.astronomy.sunset, text: "Sunset", color: "#fb923c" },
             { time: astronomy.astronomy.moonrise, text: "Moonrise", color: "#000000" },
-            { time: astronomy.astronomy.moonset, text: "Moonset", color: "#000000" },
+            { time: astronomy.astronomy.moonset, text: "Moonset", color: "#bebebeff" },
           ];
           
           return events.map((event, idx) => {
@@ -323,44 +348,128 @@ export function DaylightVisualization({ astronomy, hourlyForecast }: DaylightVis
           });
         })()}
       </div>
+
+       {/* Cloud Cover Bar */}
+      <div style={{
+        height: "10px",
+        position: "relative",
+        marginTop: "2px",
+        borderRadius: "2px",
+        overflow: "hidden",
+        background: "transparent"
+      }}>
+        <div style={{ display: "flex", height: "100%" }}>
+          {hourlyForecast.slice(0, 24).map((hour, idx) => {
+            const cloudCover = hour.cloudCover || 0; // 0-100
+            const opacity = cloudCover / 100;
+            const hourTime = new Date(hour.time);
+            const hours = hourTime.getHours();
+            const displayTime = hours === 0 ? "12A" : hours < 12 ? `${hours}A` : hours === 12 ? "12P" : `${hours - 12}P`;
+            
+            return (
+              <div
+                key={`cloud-${idx}`}
+                style={{
+                  flex: "0 0 60px",
+                  background: `rgba(128, 128, 128, ${opacity})`,
+                  borderRight: idx < 23 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                  cursor: "pointer"
+                }}
+                title={`${displayTime}: ${cloudCover}% cloud cover`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedPeriod({
+                    name: `${displayTime} Cloud Cover`,
+                    start: `${hours.toString().padStart(2, '0')}:00`,
+                    end: `${((hours + 1) % 24).toString().padStart(2, '0')}:00`,
+                    x: e.clientX,
+                    y: e.clientY,
+                    cloudCover: cloudCover
+                  });
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
       
-      {/* Context Menu */}
+      {/* Popup for period details */}
       {selectedPeriod && (
         <div
           style={{
             position: "fixed",
-            left: `${selectedPeriod.x}px`,
-            top: `${selectedPeriod.y}px`,
+            left: selectedPeriod.x + 10,
+            top: selectedPeriod.y + 10,
             background: "rgba(0, 0, 0, 0.95)",
-            border: "1px solid rgba(255, 255, 255, 0.3)",
-            borderRadius: "6px",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            borderRadius: "8px",
             padding: "0.75rem",
             zIndex: 1000,
             minWidth: "180px",
-            fontSize: "0.75rem",
-            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.5)",
-            transform: "translate(-50%, -100%) translateY(-10px)"
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.5)"
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div style={{ fontWeight: "600", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
+          <div style={{ fontWeight: "600", marginBottom: "0.5rem", fontSize: "0.9rem" }}>
             {selectedPeriod.name}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", color: "var(--muted)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Start:</span>
-              <span style={{ color: "#fff" }}>{to12Hour(selectedPeriod.start)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>End:</span>
-              <span style={{ color: "#fff" }}>{to12Hour(selectedPeriod.end)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.25rem", paddingTop: "0.25rem", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-              <span>Duration:</span>
-              <span style={{ color: "#fff", fontWeight: "600" }}>
-                {calculateDuration(selectedPeriod.start, selectedPeriod.end)}
-              </span>
-            </div>
+          <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+            {!selectedPeriod.name.includes("Cloud Cover") && (
+                <>
+                <div>Start: {to12Hour(selectedPeriod.start)}</div>
+                <div>End: {to12Hour(selectedPeriod.end)}</div>
+                <div style={{ marginTop: "0.25rem", paddingTop: "0.25rem", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                Duration: {calculateDuration(selectedPeriod.start, selectedPeriod.end)}
+                </div>
+                </>                
+            )}
+            
+            {selectedPeriod.cloudCover !== undefined && (
+              <div style={{ 
+                marginTop: "0.5rem", 
+                paddingTop: "0.5rem", 
+                borderTop: "1px solid rgba(255,255,255,0.1)" 
+              }}>
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "space-between",
+                  marginBottom: "0.35rem"
+                }}>
+                  <span>☁️ Cloud Cover:</span>
+                  <span style={{ fontWeight: "600", fontSize: "0.9rem" }}>
+                    {selectedPeriod.cloudCover}%
+                  </span>
+                </div>
+                <div style={{ 
+                  fontSize: "0.75rem", 
+                  color: "var(--muted)",
+                  fontStyle: "italic"
+                }}>
+                  {selectedPeriod.cloudCover === 0 ? "Clear skies" :
+                   selectedPeriod.cloudCover < 25 ? "Mostly clear" :
+                   selectedPeriod.cloudCover < 50 ? "Partly cloudy" :
+                   selectedPeriod.cloudCover < 75 ? "Mostly cloudy" :
+                   selectedPeriod.cloudCover < 90 ? "Cloudy" :
+                   "Overcast"}
+                </div>
+                {/* Visual cloud cover bar */}
+                <div style={{
+                  marginTop: "0.35rem",
+                  height: "4px",
+                  background: "rgba(255,255,255,0.1)",
+                  borderRadius: "2px",
+                  overflow: "hidden"
+                }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${selectedPeriod.cloudCover}%`,
+                    background: "linear-gradient(90deg, #94a3b8, #64748b)",
+                    transition: "width 0.3s ease"
+                  }} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
