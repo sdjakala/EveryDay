@@ -58,6 +58,58 @@ function playTimerBeep() {
   }
 }
 
+// Sparkline component for showing lift history
+function Sparkline({ data, width = 60, height = 20 }: { data: number[]; width?: number; height?: number }) {
+  if (!data || data.length === 0) return null;
+  
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1; // Avoid division by zero
+  
+  // Create SVG path
+  const points = data.map((value, index) => {
+    const x = (index / (data.length - 1)) * width;
+    const y = height - ((value - min) / range) * height;
+    return `${x},${y}`;
+  }).join(' ');
+  
+  // Determine trend (comparing first half to second half)
+  const midPoint = Math.floor(data.length / 2);
+  const firstHalfAvg = data.slice(0, midPoint).reduce((a, b) => a + b, 0) / midPoint;
+  const secondHalfAvg = data.slice(midPoint).reduce((a, b) => a + b, 0) / (data.length - midPoint);
+  const isUpward = secondHalfAvg > firstHalfAvg;
+  const color = isUpward ? '#00bf63' : '#ff6b6b'; // Green for upward, red for downward
+  
+  return (
+    <svg width={width} height={height} style={{ display: 'block' }}>
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.8"
+      />
+      {/* Add dots at each point */}
+      {data.map((value, index) => {
+        const x = (index / (data.length - 1)) * width;
+        const y = height - ((value - min) / range) * height;
+        return (
+          <circle
+            key={index}
+            cx={x}
+            cy={y}
+            r="1.5"
+            fill={color}
+            opacity="0.6"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 export default function WorkoutsModule() {
   const router = useRouter();
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -84,13 +136,48 @@ export default function WorkoutsModule() {
     setId: string;
     secondsLeft: number;
   } | null>(null);
+  const [liftHistoryData, setLiftHistoryData] = useState<Record<string, number[]>>({});
 
   useEffect(() => {
     fetchWorkouts();
+    fetchAllLiftHistory();
   }, []);
 
+  async function fetchAllLiftHistory() {
+    try {
+      const res = await fetch("/api/workoutResults");
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Group by lift name and calculate total weight per session
+        const historyByLift: Record<string, number[]> = {};
+        
+        data.forEach((result: any) => {
+          result.lifts.forEach((lift: any) => {
+            if (!historyByLift[lift.name]) {
+              historyByLift[lift.name] = [];
+            }
+            // Calculate total weight for this lift session (sum of weight * reps for all sets)
+            const totalWeight = lift.sets.reduce((sum: number, set: any) => {
+              return sum + (set.weight * set.reps);
+            }, 0);
+            historyByLift[lift.name].push(totalWeight);
+          });
+        });
+        
+        // Keep only the last 10 sessions for each lift
+        Object.keys(historyByLift).forEach(liftName => {
+          historyByLift[liftName] = historyByLift[liftName].slice(-10);
+        });
+        
+        setLiftHistoryData(historyByLift);
+      }
+    } catch (e) {
+      console.error("Failed to fetch lift history:", e);
+    }
+  }
+
   // Timer effect
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!timerData || timerData.secondsLeft <= 0) return;
 
@@ -100,10 +187,8 @@ export default function WorkoutsModule() {
         const newSeconds = prev.secondsLeft - 1;
         if (newSeconds === 0) {
           playTimerBeep();
-          // When timer reaches zero, mark the set complete and clear the timer
           try {
             if (prev.workoutId) {
-              // markSetComplete is stable via useCallback
               markSetComplete(prev.workoutId, prev.liftId, prev.setId);
             }
           } catch (e) {
@@ -136,7 +221,6 @@ export default function WorkoutsModule() {
     const title = newWorkoutTitle.trim();
     if (!title) return;
 
-    // Try to create the workout on the server first
     try {
       const res = await fetch("/api/workouts", {
         method: "POST",
@@ -152,12 +236,12 @@ export default function WorkoutsModule() {
         return;
       }
 
-      console.error("Failed to create workout on server, falling back to local-only");
+      console.error("Failed to create workout on server");
     } catch (e) {
-      console.error("Error creating workout on server, falling back to local-only:", e);
+      console.error("Error creating workout:", e);
     }
 
-    // Fallback: create locally (offline/temporary)
+    // Fallback: create locally
     const workout: Workout = {
       id: uid(),
       title,
@@ -202,12 +286,7 @@ export default function WorkoutsModule() {
     setNewLiftRest(60);
   }
 
-  function updateSetWeight(
-    workoutId: string,
-    liftId: string,
-    setId: string,
-    delta: number
-  ) {
+  function updateSetWeight(workoutId: string, liftId: string, setId: string, delta: number) {
     setWorkouts((prev) =>
       prev.map((w) =>
         w.id === workoutId
@@ -218,9 +297,7 @@ export default function WorkoutsModule() {
                   ? {
                       ...l,
                       sets: l.sets.map((s) =>
-                        s.id === setId
-                          ? { ...s, weight: Math.max(0, s.weight + delta) }
-                          : s
+                        s.id === setId ? { ...s, weight: Math.max(0, s.weight + delta) } : s
                       ),
                     }
                   : l
@@ -231,12 +308,7 @@ export default function WorkoutsModule() {
     );
   }
 
-  function updateSetReps(
-    workoutId: string,
-    liftId: string,
-    setId: string,
-    delta: number
-  ) {
+  function updateSetReps(workoutId: string, liftId: string, setId: string, delta: number) {
     setWorkouts((prev) =>
       prev.map((w) =>
         w.id === workoutId
@@ -247,9 +319,7 @@ export default function WorkoutsModule() {
                   ? {
                       ...l,
                       sets: l.sets.map((s) =>
-                        s.id === setId
-                          ? { ...s, reps: Math.max(1, s.reps + delta) }
-                          : s
+                        s.id === setId ? { ...s, reps: Math.max(1, s.reps + delta) } : s
                       ),
                     }
                   : l
@@ -260,12 +330,7 @@ export default function WorkoutsModule() {
     );
   }
 
-  function updateSetRest(
-    workoutId: string,
-    liftId: string,
-    setId: string,
-    delta: number
-  ) {
+  function updateSetRest(workoutId: string, liftId: string, setId: string, delta: number) {
     setWorkouts((prev) =>
       prev.map((w) =>
         w.id === workoutId
@@ -276,9 +341,7 @@ export default function WorkoutsModule() {
                   ? {
                       ...l,
                       sets: l.sets.map((s) =>
-                        s.id === setId
-                          ? { ...s, restSeconds: Math.max(0, s.restSeconds + delta) }
-                          : s
+                        s.id === setId ? { ...s, restSeconds: Math.max(0, s.restSeconds + delta) } : s
                       ),
                     }
                   : l
@@ -328,20 +391,13 @@ export default function WorkoutsModule() {
             }
           : w
       );
-
       setWorkouts(updated);
-
-      const workout = updated.find((w) => w.id === workoutId);
-      if (workout) {
-        // Persist change (fire-and-forget)
-        persistWorkout(workout).catch(() => {});
-      }
     },
     [workouts]
   );
 
-  function startTimer(workoutId: string, liftId: string, setId: string, restSeconds: number) {
-    setTimerData({ workoutId, liftId, setId, secondsLeft: restSeconds });
+  function startTimer(workoutId: string, liftId: string, setId: string, seconds: number) {
+    setTimerData({ workoutId, liftId, setId, secondsLeft: seconds });
   }
 
   async function persistWorkout(workout: Workout) {
@@ -349,7 +405,7 @@ export default function WorkoutsModule() {
       const res = await fetch(`/api/workouts/${workout.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lifts: workout.lifts }),
+        body: JSON.stringify(workout),
       });
       if (!res.ok) {
         console.error("Failed to persist workout");
@@ -359,127 +415,6 @@ export default function WorkoutsModule() {
     }
   }
 
-  async function openHistoryForLift(liftName: string) {
-    try {
-      const params = new URLSearchParams();
-      params.set("liftName", liftName);
-      if (historyLimit !== "all") params.set("limit", String(historyLimit));
-      const res = await fetch(`/api/workoutResults?${params.toString()}`);
-      if (!res.ok) {
-        setHistoryData([]);
-        setHistoryLiftName(liftName);
-        setHistoryOpen(true);
-        return;
-      }
-
-      const results = await res.json();
-
-      // Collect results that include this lift name
-      const list: { date: string; sets: { weight: number; reps: number }[] }[] = [];
-      for (const r of results) {
-        if (!r.lifts) continue;
-        const match = r.lifts.find((l: any) => l.name === liftName);
-        if (match && match.sets && match.sets.length) {
-          list.push({ date: r.completedAt || r.cachedAt || r.createdAt || "", sets: match.sets.map((s: any) => ({ weight: s.weight || 0, reps: s.reps || 0 })) });
-        }
-      }
-
-      // sort by date ascending
-      list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-      setHistoryData(list);
-      setHistoryLiftName(liftName);
-      setHistoryOpen(true);
-    } catch (e) {
-      console.error("Failed to fetch workout results:", e);
-      setHistoryData([]);
-      setHistoryLiftName(liftName);
-      setHistoryOpen(true);
-    }
-  }
-
-function renderHistoryChart(data: { date: string; sets: { weight: number; reps: number }[] }[]) {
-    if (!data || !data.length) return <div style={{ padding: 16 }}>No history for this lift.</div>;
-
-    const setColors = ["#25f4ee", "#8456ff", "#4caf50", "#ffc107", "#ff6464"];
-
-    return (
-      <div style={{ overflowY: "auto", height: "50vh", maxHeight: "80vh" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr
-              style={{
-                borderBottom: "1px solid rgba(255,255,255,0.1)",
-                position: "sticky",
-                top: 0,
-                background: "rgba(0,0,0,0.8)",
-                zIndex: 1,
-              }}
-            >
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600, color: "var(--muted)"}}>Date</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600, color: "var(--muted)"}}>Sets</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((d, i) => (
-              <tr key={i}
-                style={{
-                  borderBottom: "1px solid rgba(255,255,255,0.05)",
-                }}>
-                <td
-                  style={{ padding: "12px", verticalAlign: "top", color: "#fff", whiteSpace: "nowrap" }}>
-                  {new Date(d.date).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </td>
-                <td style={{ padding: "12px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 8,
-                      alignItems: "center",
-                    }}
-                  >
-                    {d.sets.map((s, j) => {
-                      const color = setColors[j % setColors.length];
-                      return (
-                        <div
-                          key={j}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                            padding: "4px 8px",
-                            background: `${color}15`,
-                            border: `1px solid ${color}40`,
-                            borderRadius: 4,
-                            fontSize: 11,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          <span style={{ color: color, fontWeight: 700, fontSize: 10 }}>
-                            {j + 1}
-                          </span>
-                          <div
-                            
-                          />
-                          <span style={{ color: color, fontWeight: 600 }}>{s.weight} lbs</span>
-                          <span style={{ color: "var(--muted)", fontSize: 11 }}> x {s.reps}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-}
   async function deleteLift(workoutId: string, liftId: string) {
     setWorkouts((prev) =>
       prev.map((w) =>
@@ -528,6 +463,18 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
   }
 
   async function deleteWorkout(workoutId: string) {
+    // Add confirmation dialog
+    const workout = workouts.find((w) => w.id === workoutId);
+    if (!workout) return;
+    
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${workout.title}"?\n\nThis action cannot be undone.`
+    );
+    
+    if (!confirmDelete) {
+      return;
+    }
+    
     setWorkouts((prev) => prev.filter((w) => w.id !== workoutId));
     if (activeWorkoutId === workoutId) {
       setActiveWorkoutId(null);
@@ -546,17 +493,17 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
 
   async function moveLiftUp(workoutId: string, liftId: string) {
     const workout = workouts.find((w) => w.id === workoutId);
-    if(!workout) return;
+    if (!workout) return;
 
     const liftIndex = workout.lifts.findIndex((l) => l.id === liftId);
-    if (liftIndex <= 0) return; // Already at the top
+    if (liftIndex <= 0) return;
 
     const newLifts = [...workout.lifts];
     [newLifts[liftIndex - 1], newLifts[liftIndex]] = [newLifts[liftIndex], newLifts[liftIndex - 1]];
 
     setWorkouts((prev) =>
-      prev.map((w) => (w.id === workoutId ? { ...w, lifts: newLifts } : w)
-    ));
+      prev.map((w) => (w.id === workoutId ? { ...w, lifts: newLifts } : w))
+    );
 
     const updated = { ...workout, lifts: newLifts };
     await persistWorkout(updated);
@@ -564,24 +511,23 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
 
   async function moveLiftDown(workoutId: string, liftId: string) {
     const workout = workouts.find((w) => w.id === workoutId);
-    if(!workout) return;
+    if (!workout) return;
 
     const liftIndex = workout.lifts.findIndex((l) => l.id === liftId);
-    if (liftIndex === -1 || liftIndex >= workout.lifts.length - 1) return; // Already at the bottom
+    if (liftIndex === -1 || liftIndex >= workout.lifts.length - 1) return;
     
     const newLifts = [...workout.lifts];
     [newLifts[liftIndex + 1], newLifts[liftIndex]] = [newLifts[liftIndex], newLifts[liftIndex + 1]];
 
     setWorkouts((prev) =>
-      prev.map((w) => (w.id === workoutId ? { ...w, lifts: newLifts } : w)
-    ));
+      prev.map((w) => (w.id === workoutId ? { ...w, lifts: newLifts } : w))
+    );
 
     const updated = { ...workout, lifts: newLifts };
     await persistWorkout(updated);
   }
 
   function isWorkoutComplete(workout: Workout): boolean {
-    // Check if all lifts have at least one set, and all sets are completed
     if (workout.lifts.length === 0) return false;
     
     return workout.lifts.every((lift) =>
@@ -616,8 +562,6 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
       });
 
       if (res.ok) {
-
-        // Reset all checkmarks
         setWorkouts((prev) => 
           prev.map((w) =>
             w.id === workout.id
@@ -645,11 +589,13 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
             })),
           })),
         };
-        // Persist the reset state
         await persistWorkout(updatedWorkout);
 
         setActiveWorkoutId(null);
-        // Redirect to home to view all saved workouts
+        
+        // Refresh lift history data to update sparklines
+        await fetchAllLiftHistory();
+        
         router.push("/");
       } else {
         console.error("Failed to submit workout");
@@ -661,12 +607,46 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
     }
   }
 
+  async function openHistory(liftName: string) {
+    setHistoryLiftName(liftName);
+    setHistoryOpen(true);
+    try {
+      const limit = historyLimit === "all" ? undefined : historyLimit;
+      const params = new URLSearchParams({ liftName });
+      if (limit) params.append("limit", String(limit));
+      const res = await fetch(`/api/workoutResults?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        const grouped: Record<string, { weight: number; reps: number }[]> = {};
+        data.forEach((r: any) => {
+          const lift = r.lifts.find((l: any) => l.name === liftName);
+          if (!lift) return;
+          const date = new Date(r.completedAt).toLocaleDateString();
+          if (!grouped[date]) grouped[date] = [];
+          lift.sets.forEach((s: any) => {
+            grouped[date].push({ weight: s.weight, reps: s.reps });
+          });
+        });
+        const arr = Object.keys(grouped).map((date) => ({
+          date,
+          sets: grouped[date],
+        }));
+        setHistoryData(arr);
+      }
+    } catch (e) {
+      console.error("Failed to fetch history:", e);
+    }
+  }
+
   if (loading) {
     return <div>Loading workouts...</div>;
   }
 
+  const setColors = ["#25f4ee", "#8456ff", "#ffa500", "#ff6b6b", "#00bf63"];
+
   return (
     <div style={{ width: "100%", boxSizing: "border-box" }}>
+      {/* Create Workout Input */}
       <div style={{ marginBottom: 16, marginTop: 5, width: "100%", boxSizing: "border-box" }}>
         <div style={{ display: "flex", gap: 8, width: "100%", boxSizing: "border-box" }}>
           <input
@@ -675,14 +655,7 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
             value={newWorkoutTitle}
             onChange={(e) => setNewWorkoutTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && createWorkout()}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 4,
-              background: "rgba(255,255,255,0.05)",
-              color: "#fff",
-            }}
+            className="workout-input"
           />
           <button onClick={createWorkout} className="workout-create-btn">
             Create
@@ -690,36 +663,19 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
         </div>
       </div>
 
+      {/* Workouts List */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box" }}>
         {workouts.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontSize: 14 }}>
-            No workouts yet
+          <div className="workout-empty-state">
+            No workouts yet. Create one above to get started!
           </div>
         ) : (
           workouts.map((w) => (
-            <div key={w.id} style={{ marginBottom: 8, width: "100%", boxSizing: "border-box", overflow: "hidden",
-              borderRadius: 6 }}>
+            <div key={w.id} className="workout-card">
               {/* Workout Header */}
               <div
                 onClick={() => setActiveWorkoutId(activeWorkoutId === w.id ? null : w.id)}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "12px 16px",
-                  background:
-                    activeWorkoutId === w.id
-                      ? "rgba(37, 244, 238, 0.2)"
-                      : "rgba(255,255,255,0.05)",
-                  border:
-                    activeWorkoutId === w.id
-                      ? "1px solid rgba(37, 244, 238, 0.5)"
-                      : "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: 6,
-                  color: "#fff",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                }}
+                className={`workout-card-header ${activeWorkoutId === w.id ? 'active' : ''}`}
               >
                 <div style={{ textAlign: "left", flex: 1 }}>
                   <div style={{ fontWeight: 500, fontSize: 16 }}>{w.title}</div>
@@ -776,477 +732,266 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
                 <div style={{ marginTop: 12, paddingLeft: 16, width: "100%", boxSizing: "border-box" }}>
                   {/* Add Lift Form - Only show in edit mode */}
                   {editingWorkoutId === w.id && (
-                    <div style={{ marginBottom: 16, padding: "12px", background: "rgba(255,255,255,0.02)", borderRadius: 6, width: "100%", boxSizing: "border-box" }}>
+                    <div className="lift-form">
                       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, fontWeight: 500 }}>
                         Add Lift
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box" }}>
+                      <div className="lift-form-grid">
                         <input
                           type="text"
-                          placeholder="Lift name (e.g., Bench Press)"
+                          placeholder="Lift name"
                           value={newLiftName}
                           onChange={(e) => setNewLiftName(e.target.value)}
-                          style={{
-                            padding: "8px 12px",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            borderRadius: 4,
-                            background: "rgba(255,255,255,0.05)",
-                            color: "#fff",
-                          }}
+                          className="workout-input"
                         />
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                          <div>
-                            <label style={{ fontSize: 12, color: "var(--muted)" }}>
-                              Sets: {newLiftSets}
-                            </label>
-                            <input
-                              type="range"
-                              min="1"
-                              max="20"
-                              value={newLiftSets}
-                              onChange={(e) => setNewLiftSets(parseInt(e.target.value))}
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                          <div>
-                            <label style={{ fontSize: 12, color: "var(--muted)" }}>
-                              Reps: {newLiftReps}
-                            </label>
-                            <input
-                              type="range"
-                              min="1"
-                              max="30"
-                              value={newLiftReps}
-                              onChange={(e) => setNewLiftReps(parseInt(e.target.value))}
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 12, color: "var(--muted)" }}>
-                            Weight: {newLiftWeight} lbs
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="500"
-                            step="2.5"
-                            value={newLiftWeight}
-                            onChange={(e) => setNewLiftWeight(parseInt(e.target.value))}
-                            style={{ width: "100%" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 12, color: "var(--muted)" }}>
-                            Rest: {newLiftRest}s
-                          </label>
-                          <input
-                            type="range"
-                            min="15"
-                            max="300"
-                            step="15"
-                            value={newLiftRest}
-                            onChange={(e) => setNewLiftRest(parseInt(e.target.value))}
-                            style={{ width: "100%" }}
-                          />
-                        </div>
-                        <button
-                          onClick={addLift}
-                          className="workout-add-lift-btn"
-                        >
-                          Add Lift
-                        </button>
+                        <input
+                          type="number"
+                          placeholder="Sets"
+                          value={newLiftSets}
+                          onChange={(e) => setNewLiftSets(Number(e.target.value))}
+                          className="lift-input-number"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Reps"
+                          value={newLiftReps}
+                          onChange={(e) => setNewLiftReps(Number(e.target.value))}
+                          className="lift-input-number"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Weight"
+                          value={newLiftWeight}
+                          onChange={(e) => setNewLiftWeight(Number(e.target.value))}
+                          className="lift-input-number"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Rest (s)"
+                          value={newLiftRest}
+                          onChange={(e) => setNewLiftRest(Number(e.target.value))}
+                          className="lift-input-number"
+                        />
                       </div>
+                      <button onClick={addLift} className="workout-create-btn" style={{ width: "100%" }}>
+                        Add Lift
+                      </button>
                     </div>
                   )}
 
                   {/* Lifts List */}
-                  {w.lifts.length === 0 ? (
-                    <div style={{ color: "var(--muted)", fontSize: 14, padding: "8px 0" }}>
-                      No lifts added yet
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box" }}>
+                  {w.lifts.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
                       {w.lifts.map((lift) => (
-                        <div key={lift.id} style={{ width: "100%", boxSizing: "border-box" }}>
-                          {/* Lift Header */}
+                        <div key={lift.id} className="lift-card">
                           <div
+                            className="lift-card-header"
                             onClick={() => setExpandedLiftId(expandedLiftId === lift.id ? null : lift.id)}
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              padding: "10px 12px",
-                              background:
-                                expandedLiftId === lift.id
-                                  ? "rgba(255,255,255,0.1)"
-                                  : "rgba(255,255,255,0.05)",
-                              border: "1px solid rgba(255,255,255,0.1)",
-                              borderRadius: 4,
-                              color: "#fff",
-                              cursor: "pointer",
-                              transition: "all 0.2s",
-                              textAlign: "left",
-                            }}
                           >
                             <div style={{ flex: 1 }}>
-                              <div style={{ fontWeight: 500 }}>{lift.name}</div>
-                              <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                {lift.sets.length} sets
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ fontWeight: 600, fontSize: 14 }}>{lift.name}</div>
+                                {liftHistoryData[lift.name] && liftHistoryData[lift.name].length > 0 && (
+                                  <div style={{ 
+                                    display: "flex", 
+                                    alignItems: "center", 
+                                    gap: 4,
+                                    padding: "2px 6px",
+                                    background: "rgba(255,255,255,0.05)",
+                                    borderRadius: 4,
+                                    border: "1px solid rgba(255,255,255,0.1)"
+                                  }}>
+                                    <Sparkline data={liftHistoryData[lift.name]} width={50} height={16} />
+                                    <span style={{ fontSize: 9, color: "var(--muted)", fontWeight: 500 }}>
+                                      {liftHistoryData[lift.name].length}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                                {lift.sets.length} sets • {lift.targetReps} reps @ {lift.targetWeight} lbs
                               </div>
                             </div>
-                            <span style={{ fontSize: 14, marginRight: 8 }}>
-                              {expandedLiftId === lift.id ? "▼" : "▶"}
-                            </span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openHistoryForLift(lift.name);
-                              }}
-                              className="toggle-btn small"
-                              title="View lift history"
-                              style={{ marginRight: 8 }}
-                            >
-                              <Icon name="calendar" />
-                              <span style={{ fontSize: 12, marginLeft: 6 }}>History</span>
-                            </button>
-                            {editingWorkoutId === w.id && (
-                              <>
+                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                              {editingWorkoutId === w.id && (
+                                <>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      moveLiftUp(w.id, lift.id);
+                                    }}
+                                    disabled={w.lifts.indexOf(lift) === 0}
+                                    className="workout-action-btn"
+                                    title="Move Up"
+                                  >
+                                    ↑
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      moveLiftDown(w.id, lift.id);
+                                    }}
+                                    disabled={w.lifts.indexOf(lift) === w.lifts.length - 1}
+                                    className="workout-action-btn"
+                                    title="Move Down"
+                                  >
+                                    ↓
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteLift(w.id, lift.id);
+                                    }}
+                                    className="workout-action-btn danger"
+                                    title="Delete lift"
+                                  >
+                                    ×
+                                  </button>
+                                </>
+                              )}
+                              {!editingWorkoutId && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    moveLiftUp(w.id, lift.id);
+                                    openHistory(lift.name);
                                   }}
-                                  disabled={w.lifts.indexOf(lift) === 0}
-                                  style={{
-                                    width: 24,
-                                    height: 24,
-                                    padding: 0,
-                                    background: w.lifts.indexOf(lift) === 0 ? "rgba(255,255,255,0.05)" : "rgba(37, 244, 238, 0.2)",
-                                    border: w.lifts.indexOf(lift) === 0 ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(37, 244, 238, 0.5)",
-                                    borderRadius: 3,
-                                    color: w.lifts.indexOf(lift) === 0 ? "rgba(255,255,255,0.3)" : "#25f4ee",
-                                    cursor: w.lifts.indexOf(lift) === 0 ? "not-allowed" : "pointer",
-                                    fontSize: 12, 
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    marginRight: 4,
-                                  }}
-                                  title="Move Up"
+                                  className="cal-btn"
+                                  title="View history"
+                                  style={{ fontSize: 11, padding: "4px 8px" }}
                                 >
-                                  ↑
+                                  History
                                 </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    moveLiftDown(w.id, lift.id);
-                                  }}
-                                  disabled={w.lifts.indexOf(lift) === w.lifts.length - 1}
-                                  style={{  
-                                    width: 24,
-                                    height: 24,
-                                    padding: 0,
-                                    background: w.lifts.indexOf(lift) === w.lifts.length - 1 ? "rgba(255,255,255,0.05)" : "rgba(37, 244, 238, 0.2)",
-                                    border: w.lifts.indexOf(lift) === w.lifts.length - 1 ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(37, 244, 238, 0.5)",
-                                    borderRadius: 3,  
-                                    color: w.lifts.indexOf(lift) === w.lifts.length - 1 ? "rgba(255,255,255,0.3)" : "#25f4ee",
-                                    cursor: w.lifts.indexOf(lift) === w.lifts.length - 1 ? "not-allowed" : "pointer",
-                                    fontSize: 12,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    marginRight: 8,
-                                  }}
-                                  title="Move Down"
-                                >
-                                  ↓
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    deleteLift(w.id, lift.id);
-                                  }}
-                                  style={{
-                                    width: 24,
-                                    height: 24,
-                                    padding: 0,
-                                    background: "rgba(255, 100, 100, 0.2)",
-                                    border: "1px solid rgba(255, 100, 100, 0.5)",
-                                    borderRadius: 3,
-                                    color: "#ff6464",
-                                    cursor: "pointer",
-                                    fontSize: 12,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                  }}
-                                  title="Delete lift"
-                                >
-                                  🗑
-                                </button>        
-                              </>                                                   
-                            )}
+                              )}
+                              <span style={{ fontSize: 14 }}>
+                                {expandedLiftId === lift.id ? "▼" : "▶"}
+                              </span>
+                            </div>
                           </div>
 
-                          {/* Expanded Lift Content - Sets */}
+                          {/* Expanded Sets */}
                           {expandedLiftId === lift.id && (
-                            <div style={{ marginTop: 8, paddingLeft: 12, width: "100%", boxSizing: "border-box" }}>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", boxSizing: "border-box" }}>
-                                {lift.sets.map((set) => (
-                                  <div
-                                    key={set.id}
-                                    style={{
-                                      padding: "10px 12px",
-                                      background: set.completed
-                                        ? "rgba(37, 244, 238, 0.1)"
-                                        : "rgba(255,255,255,0.02)",
-                                      border: "1px solid rgba(255,255,255,0.08)",
-                                      borderRadius: 4,
-                                      textDecoration: set.completed
-                                        ? "line-through"
-                                        : "none",
-                                      width: "100%",
-                                      boxSizing: "border-box",
-                                    }}
-                                  >
-                                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={set.completed}
-                                        onChange={() =>
-                                          toggleSetComplete(w.id, lift.id, set.id)
-                                        }
-                                        style={{ cursor: "pointer", width: 18, height: 18 }}
-                                      />
-                                      <div style={{ flex: 1 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 500 }}>
-                                          Set {set.repNumber}
+                            <div style={{ marginTop: 12 }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                {lift.sets.map((set) => {
+                                  const isTimerActive =
+                                    timerData?.workoutId === w.id &&
+                                    timerData?.liftId === lift.id &&
+                                    timerData?.setId === set.id;
+                                  return (
+                                    <div key={set.id} className={`set-card ${set.completed ? 'completed' : ''}`}>
+                                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={set.completed}
+                                          onChange={() => toggleSetComplete(w.id, lift.id, set.id)}
+                                          className="set-checkbox"
+                                        />
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ fontSize: 13, fontWeight: 500 }}>
+                                            Set {set.repNumber}
+                                          </div>
+                                          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                                            {set.reps} reps @ {set.weight} lbs • {set.restSeconds}s rest
+                                          </div>
                                         </div>
-                                        <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                                          {set.reps} reps @ {set.weight} lbs • {set.restSeconds}s rest
-                                        </div>
+                                        {editingWorkoutId === w.id && (
+                                          <button
+                                            onClick={() => deleteSet(w.id, lift.id, set.id)}
+                                            className="workout-action-btn danger"
+                                            title="Delete set"
+                                          >
+                                            ×
+                                          </button>
+                                        )}
                                       </div>
-                                      {editingWorkoutId === w.id && (
-                                        <button
-                                          onClick={() =>
-                                            deleteSet(w.id, lift.id, set.id)
-                                          }
-                                          style={{
-                                            width: 24,
-                                            height: 24,
-                                            padding: 0,
-                                            background: "rgba(255, 100, 100, 0.2)",
-                                            border: "1px solid rgba(255, 100, 100, 0.5)",
-                                            borderRadius: 3,
-                                            color: "#ff6464",
-                                            cursor: "pointer",
-                                            fontSize: 12,
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                          }}
-                                          title="Delete set"
-                                        >
-                                          ✕
-                                        </button>
+
+                                      {/* Set Controls - Always show when not editing workout */}
+                                      {!editingWorkoutId && (
+                                        <>
+                                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
+                                            <div>
+                                              <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
+                                                Weight
+                                              </div>
+                                              <div style={{ display: "flex", gap: 4 }}>
+                                                <button
+                                                  onClick={() => updateSetWeight(w.id, lift.id, set.id, -2.5)}
+                                                  className="workout-action-btn"
+                                                  style={{ flex: 1 }}
+                                                >
+                                                  -2.5
+                                                </button>
+                                                <button
+                                                  onClick={() => updateSetWeight(w.id, lift.id, set.id, 2.5)}
+                                                  className="workout-action-btn"
+                                                  style={{ flex: 1 }}
+                                                >
+                                                  +2.5
+                                                </button>
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
+                                                Reps
+                                              </div>
+                                              <div style={{ display: "flex", gap: 4 }}>
+                                                <button
+                                                  onClick={() => updateSetReps(w.id, lift.id, set.id, -1)}
+                                                  className="workout-action-btn"
+                                                  style={{ flex: 1 }}
+                                                >
+                                                  -1
+                                                </button>
+                                                <button
+                                                  onClick={() => updateSetReps(w.id, lift.id, set.id, 1)}
+                                                  className="workout-action-btn"
+                                                  style={{ flex: 1 }}
+                                                >
+                                                  +1
+                                                </button>
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
+                                                Rest
+                                              </div>
+                                              <div style={{ display: "flex", gap: 4 }}>
+                                                <button
+                                                  onClick={() => updateSetRest(w.id, lift.id, set.id, -10)}
+                                                  className="workout-action-btn"
+                                                  style={{ flex: 1 }}
+                                                >
+                                                  -10
+                                                </button>
+                                                <button
+                                                  onClick={() => updateSetRest(w.id, lift.id, set.id, 10)}
+                                                  className="workout-action-btn"
+                                                  style={{ flex: 1 }}
+                                                >
+                                                  +10
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Timer */}
+                                          {isTimerActive ? (
+                                            <div className={`timer-display ${timerData.secondsLeft === 0 ? 'complete' : ''}`}>
+                                              Rest: {timerData.secondsLeft}s
+                                            </div>
+                                          ) : !set.completed ? (
+                                            <button
+                                              onClick={() => startTimer(w.id, lift.id, set.id, set.restSeconds)}
+                                              className="timer-button"
+                                            >
+                                              Start Rest ({set.restSeconds}s)
+                                            </button>
+                                          ) : null}
+                                        </>
                                       )}
                                     </div>
-
-                                    {/* Set Controls */}
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
-                                      <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "space-between" }}>
-                                        <button
-                                          onClick={() =>
-                                            updateSetReps(w.id, lift.id, set.id, -1)
-                                          }
-                                          style={{
-                                            width: 24,
-                                            height: 24,
-                                            padding: 0,
-                                            background: "rgba(255,255,255,0.1)",
-                                            border: "1px solid rgba(255,255,255,0.2)",
-                                            borderRadius: 3,
-                                            color: "#fff",
-                                            cursor: "pointer",
-                                            fontSize: 12,
-                                          }}
-                                          title="Decrease reps"
-                                        >
-                                          −
-                                        </button>
-                                        <div style={{ textAlign: "center", flex: 1, fontSize: 12 }}>
-                                          {set.reps} X
-                                        </div>
-                                        <button
-                                          onClick={() =>
-                                            updateSetReps(w.id, lift.id, set.id, 1)
-                                          }
-                                          style={{
-                                            width: 24,
-                                            height: 24,
-                                            padding: 0,
-                                            background: "rgba(255,255,255,0.1)",
-                                            border: "1px solid rgba(255,255,255,0.2)",
-                                            borderRadius: 3,
-                                            color: "#fff",
-                                            cursor: "pointer",
-                                            fontSize: 12,
-                                          }}
-                                          title="Increase reps"
-                                        >
-                                          +
-                                        </button>
-                                      </div>
-
-                                      <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "space-between" }}>
-                                        <button
-                                          onClick={() =>
-                                            updateSetWeight(
-                                              w.id,
-                                              lift.id,
-                                              set.id,
-                                              -2.5
-                                            )
-                                          }
-                                          style={{
-                                            width: 24,
-                                            height: 24,
-                                            padding: 0,
-                                            background: "rgba(255,255,255,0.1)",
-                                            border: "1px solid rgba(255,255,255,0.2)",
-                                            borderRadius: 3,
-                                            color: "#fff",
-                                            cursor: "pointer",
-                                            fontSize: 12,
-                                          }}
-                                          title="Decrease weight"
-                                        >
-                                          −
-                                        </button>
-                                        <div style={{ textAlign: "center", flex: 1, fontSize: 12 }}>
-                                          {set.weight} lbs
-                                        </div>
-                                        <button
-                                          onClick={() =>
-                                            updateSetWeight(
-                                              w.id,
-                                              lift.id,
-                                              set.id,
-                                              2.5
-                                            )
-                                          }
-                                          style={{
-                                            width: 24,
-                                            height: 24,
-                                            padding: 0,
-                                            background: "rgba(255,255,255,0.1)",
-                                            border: "1px solid rgba(255,255,255,0.2)",
-                                            borderRadius: 3,
-                                            color: "#fff",
-                                            cursor: "pointer",
-                                            fontSize: 12,
-                                          }}
-                                          title="Increase weight"
-                                        >
-                                          +
-                                        </button>
-                                      </div>
-
-                                      <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "space-between" }}>
-                                        <button
-                                          onClick={() =>
-                                            updateSetRest(
-                                              w.id,
-                                              lift.id,
-                                              set.id,
-                                              -15
-                                            )
-                                          }
-                                          style={{
-                                            width: 24,
-                                            height: 24,
-                                            padding: 0,
-                                            background: "rgba(255,255,255,0.1)",
-                                            border: "1px solid rgba(255,255,255,0.2)",
-                                            borderRadius: 3,
-                                            color: "#fff",
-                                            cursor: "pointer",
-                                            fontSize: 12,
-                                          }}
-                                          title="Decrease rest"
-                                        >
-                                          −
-                                        </button>
-                                        <div style={{ textAlign: "center", flex: 1, fontSize: 11 }}>
-                                          {set.restSeconds}s
-                                        </div>
-                                        <button
-                                          onClick={() =>
-                                            updateSetRest(
-                                              w.id,
-                                              lift.id,
-                                              set.id,
-                                              15
-                                            )
-                                          }
-                                          style={{
-                                            width: 24,
-                                            height: 24,
-                                            padding: 0,
-                                            background: "rgba(255,255,255,0.1)",
-                                            border: "1px solid rgba(255,255,255,0.2)",
-                                            borderRadius: 3,
-                                            color: "#fff",
-                                            cursor: "pointer",
-                                            fontSize: 12,
-                                          }}
-                                          title="Increase rest"
-                                        >
-                                          +
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* Timer or Start Button */}
-                                    {timerData?.setId === set.id ? (
-                                      <div style={{ padding: "8px 0" }}>
-                                        <div
-                                          style={{
-                                            textAlign: "center",
-                                            fontWeight: 600,
-                                            fontSize: timerData.secondsLeft === 0 ? 20 : 16,
-                                            color:
-                                              timerData.secondsLeft === 0
-                                                ? "#00ff00"
-                                                : "rgba(37, 244, 238, 0.8)",
-                                          }}
-                                        >
-                                          Rest: {timerData.secondsLeft}s
-                                        </div>
-                                      </div>
-                                    ) : !set.completed ? (
-                                      <button
-                                        onClick={() =>
-                                          startTimer(w.id, lift.id, set.id, set.restSeconds)
-                                        }
-                                        style={{
-                                          width: "100%",
-                                          padding: "8px",
-                                          background: "rgba(37, 244, 238, 0.2)",
-                                          border: "1px solid rgba(37, 244, 238, 0.5)",
-                                          borderRadius: 4,
-                                          color: "#fff",
-                                          cursor: "pointer",
-                                          fontSize: 13,
-                                          fontWeight: 500,
-                                        }}
-                                      >
-                                        Start Rest ({set.restSeconds}s)
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -1263,22 +1008,7 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
                   <button
                     onClick={() => submitWorkout(w)}
                     disabled={!isWorkoutComplete(w)}
-                    style={{
-                      width: "100%",
-                      padding: "12px 16px",
-                      background: isWorkoutComplete(w)
-                        ? "rgba(76, 175, 80, 0.3)"
-                        : "rgba(76, 175, 80, 0.1)",
-                      border: isWorkoutComplete(w)
-                        ? "1px solid rgba(76, 175, 80, 0.6)"
-                        : "1px solid rgba(76, 175, 80, 0.3)",
-                      borderRadius: 6,
-                      color: isWorkoutComplete(w) ? "#4caf50" : "rgba(76, 175, 80, 0.5)",
-                      cursor: isWorkoutComplete(w) ? "pointer" : "not-allowed",
-                      fontSize: 14,
-                      fontWeight: 500,
-                      transition: "all 0.2s",
-                    }}
+                    className="workout-submit-btn"
                   >
                     {isWorkoutComplete(w) ? "✓ Submit Workout" : "Complete all sets to submit"}
                   </button>
@@ -1288,62 +1018,111 @@ function renderHistoryChart(data: { date: string; sets: { weight: number; reps: 
           ))
         )}
       </div>
+
       {/* History Modal */}
       <Modal open={historyOpen} onClose={() => setHistoryOpen(false)}>
         <div style={{ padding: 16, minWidth: 320, maxWidth: 800 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontWeight: 600 }}>{historyLiftName} — History</div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <button
-                    className={`toggle-btn ${historyLimit === 5 ? "active" : ""} small`}
-                    onClick={() => setHistoryLimit(5)}
-                    title="Last 5"
-                  >
-                    5
-                  </button>
-                  <button
-                    className={`toggle-btn ${historyLimit === 10 ? "active" : ""} small`}
-                    onClick={() => setHistoryLimit(10)}
-                    title="Last 10"
-                  >
-                    10
-                  </button>
-                  <button
-                    className={`toggle-btn ${historyLimit === "all" ? "active" : ""} small`}
-                    onClick={() => setHistoryLimit("all")}
-                    title="All"
-                  >
-                    All
-                  </button>
-                </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontWeight: 600 }}>{historyLiftName} — History</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <button
-                  className="cal-btn"
-                  onClick={async () => {
-                    // clear history for this lift
-                    if (!confirm(`Clear history for ${historyLiftName}? This cannot be undone.`)) return;
-                    try {
-                      const params = new URLSearchParams();
-                      params.set("liftName", historyLiftName);
-                      const res = await fetch(`/api/workoutResults?${params.toString()}`, { method: "DELETE" });
-                      if (res.ok) {
-                        setHistoryData([]);
-                        setHistoryOpen(false);
-                      } else {
-                        alert("Failed to clear history");
-                      }
-                    } catch (e) {
-                      console.error(e);
-                      alert("Failed to clear history");
-                    }
-                  }}
+                  className={`toggle-btn ${historyLimit === 5 ? "active" : ""} small`}
+                  onClick={() => setHistoryLimit(5)}
+                  title="Last 5"
                 >
-                  Clear History
+                  5
                 </button>
-                <button className="icon-btn" onClick={() => setHistoryOpen(false)} aria-label="Close history">✕</button>
+                <button
+                  className={`toggle-btn ${historyLimit === 10 ? "active" : ""} small`}
+                  onClick={() => setHistoryLimit(10)}
+                  title="Last 10"
+                >
+                  10
+                </button>
+                <button
+                  className={`toggle-btn ${historyLimit === "all" ? "active" : ""} small`}
+                  onClick={() => setHistoryLimit("all")}
+                  title="All"
+                >
+                  All
+                </button>
               </div>
-            </div>            
-            {renderHistoryChart(historyData)}
+              <button
+                className="cal-btn"
+                onClick={async () => {
+                  if (!confirm(`Clear history for ${historyLiftName}?`)) return;
+                  try {
+                    const res = await fetch("/api/workoutResults", {
+                      method: "DELETE",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ liftName: historyLiftName }),
+                    });
+                    if (res.ok) {
+                      setHistoryData([]);
+                    }
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                title="Clear history"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                  <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600 }}>Date</th>
+                  <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600 }}>Sets</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyData.map((d, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                    <td style={{ padding: "12px", verticalAlign: "top" }}>
+                      {new Date(d.date).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </td>
+                    <td style={{ padding: "12px" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                        {d.sets.map((s, j) => {
+                          const color = setColors[j % setColors.length];
+                          return (
+                            <div
+                              key={j}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                padding: "4px 8px",
+                                background: `${color}15`,
+                                border: `1px solid ${color}40`,
+                                borderRadius: 4,
+                                fontSize: 11,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              <span style={{ color: color, fontWeight: 700, fontSize: 10 }}>
+                                {j + 1}
+                              </span>
+                              <span style={{ color: color, fontWeight: 600 }}>{s.weight} lbs</span>
+                              <span style={{ color: "var(--muted)", fontSize: 11 }}> x {s.reps}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </Modal>
     </div>

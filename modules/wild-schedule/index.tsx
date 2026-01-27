@@ -514,12 +514,12 @@ export default function WildScheduleModule() {
                 // Check if this is the current/next game to highlight
                 const gameIndex = currentIndex + idx;
                 const now = new Date();
-                const gameDate = new Date(game.gameDate);
-                const isCurrentOrNext = (isLive || (game.gameState === "FUT" && gameDate >= now)) && 
-                                       games.findIndex(g => {
-                                         const gDate = new Date(g.gameDate);
-                                         return gDate >= now || g.gameState === "LIVE" || g.gameState === "CRIT";
-                                       }) === gameIndex;
+                const gameStartTime = new Date(game.startTimeUTC);
+                const isCurrentOrNext = (isLive || (game.gameState === "FUT" && gameStartTime >= now)) && 
+                                      games.findIndex(g => {
+                                        const gStartTime = new Date(g.startTimeUTC);
+                                        return (g.gameState === "FUT" && gStartTime >= now) || g.gameState === "LIVE" || g.gameState === "CRIT";
+                                      }) === gameIndex;
 
                 return (
                   <div

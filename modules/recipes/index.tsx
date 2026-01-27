@@ -512,6 +512,7 @@ export default function RecipesModule() {
   const [newTagInput, setNewTagInput] = useState("");
   const [editingTagsForRecipe, setEditingTagsForRecipe] = useState<string | null>(null);
   const [createRecipeTags, setCreateRecipeTags] = useState("");
+  const [fullscreenRecipeId, setFullscreenRecipeId] = useState<string | null>(null);
 
   const SECTIONS = ["Produce", "Meat", "Dairy", "Frozen", "Bakery", "Pantry", "Other"];
   const UNITS = ["", "cup", "cups", "tbsp", "tsp", "oz", "lb", "g", "kg", "ml", "L", "qt", "pt", "gal", "pinch", "dash", "clove", "cloves", "piece", "pieces", "whole"];
@@ -522,6 +523,17 @@ export default function RecipesModule() {
       setRecipes(loaded);
     });
   }, []);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && fullscreenRecipeId) {
+        setFullscreenRecipeId(null);
+      }
+    };
+    
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [fullscreenRecipeId]);
 
   function handleUpdateRecipe(id: string, updates: Partial<Recipe>) {
     // Optimistically update UI
@@ -1093,17 +1105,27 @@ export default function RecipesModule() {
                 </div>                
                 <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                   {expandedRecipeId === r.id && (
-                    <button 
-                      onClick={() => setEditingRecipeId(editingRecipeId === r.id ? null : r.id)} 
-                      className="task-action-btn" 
-                      style={{ padding: "4px 8px" }}
-                    >
-                      {editingRecipeId === r.id ? (
-                        <span style={{ fontSize: "1rem" }}>✕</span>
-                      ) : (
-                        <Icon name="edit" />
-                      )}
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => setFullscreenRecipeId(r.id)}
+                        className="task-action-btn" 
+                        style={{ padding: "4px 8px" }}
+                        title="View fullscreen"
+                      >
+                        <Icon name="maximize" />
+                      </button>
+                      <button 
+                        onClick={() => setEditingRecipeId(editingRecipeId === r.id ? null : r.id)} 
+                        className="task-action-btn" 
+                        style={{ padding: "4px 8px" }}
+                      >
+                        {editingRecipeId === r.id ? (
+                          <span style={{ fontSize: "1rem" }}>✕</span>
+                        ) : (
+                          <Icon name="edit" />
+                        )}
+                      </button>
+                    </>
                   )}
                   <div style={{ position: "relative" }}>
                     <button 
@@ -1643,6 +1665,7 @@ export default function RecipesModule() {
               )}
             </div>
         )))}
+
       </div>
 
       <style>{`
@@ -1652,6 +1675,199 @@ export default function RecipesModule() {
         .task-action-btn { padding: 4px 8px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); borderRadius: 4px; color: white; cursor: pointer; fontSize: 13px; transition: all 0.2s; }
         .task-action-btn:hover { background: rgba(255, 255, 255, 0.2); }
       `}</style>
+      {/* FULLSCREEN RECIPE MODAL */}
+      {fullscreenRecipeId && (() => {
+        const recipe = recipes.find(r => r.id === fullscreenRecipeId);
+        if (!recipe) return null;
+        
+        return (
+          <>
+            {/* Backdrop */}
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "rgba(0,0,0,0.95)",
+                zIndex: 9998,
+                backdropFilter: "blur(8px)"
+              }}
+              onClick={() => setFullscreenRecipeId(null)}
+            />
+            
+            {/* Fullscreen Content - Same Layout */}
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 9999,
+                display: "flex",
+                flexDirection: "column",
+                background: "var(--bg)",
+                overflow: "hidden"
+              }}
+            >
+              {/* Header with Close Button */}
+              <div style={{ 
+                padding: "1rem 2rem",
+                borderBottom: "1px solid rgba(255,255,255,0.1)",
+                display: "flex",
+                justifyContent: "flex-end",
+                background: "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))"
+              }}>
+                <button
+                  onClick={() => setFullscreenRecipeId(null)}
+                  style={{
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "8px",
+                    padding: "0.5rem 1rem",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                    fontWeight: 600,
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.15)";
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)";
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)";
+                  }}
+                >
+                  Close ✕
+                </button>
+              </div>
+              
+              {/* Recipe Content - Exact Same Layout */}
+              <div style={{ 
+                flex: 1,
+                overflow: "auto",
+                padding: "1.5rem 2rem"
+              }}>
+                {/* Recipe Card - Same as regular view */}
+                <div style={{ 
+                  padding: 16, 
+                  background: "rgba(255,255,255,0.05)", 
+                  borderRadius: 8, 
+                  border: recipe.planned ? "2px solid #25f4ee" : "1px solid rgba(255,255,255,0.1)",
+                  maxWidth: "1200px",
+                  margin: "0 auto"
+                }}>
+                  {/* Recipe Header */}
+                  <div style={{ marginBottom: 16 }}>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{recipe.title}</h2>
+                    {recipe.link && (
+                      <a 
+                        href={recipe.link} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        style={{ color: "#25f4ee", fontSize: 13, marginTop: 6, display: "inline-block" }}
+                      >
+                        View Original
+                      </a>
+                    )}
+                  </div>
+
+                  {/* Tags */}
+                  {recipe.tags && recipe.tags.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {recipe.tags.map(tag => (
+                          <span
+                            key={tag}
+                            style={{
+                              padding: "4px 10px",
+                              background: "rgba(37, 244, 238, 0.1)",
+                              border: "1px solid rgba(37, 244, 238, 0.3)",
+                              borderRadius: "12px",
+                              fontSize: 12,
+                              color: "#25f4ee"
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ingredients */}
+                  {recipe.ingredients.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <strong style={{ fontSize: 13, display: "block", marginBottom: 8 }}>Ingredients</strong>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {recipe.ingredients.map((ing) => (
+                          <div 
+                            key={ing.id} 
+                            style={{ 
+                              padding: "6px 10px",
+                              background: "rgba(255,255,255,0.08)",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              border: "1px solid rgba(255,255,255,0.1)"
+                            }}
+                          >
+                            {ing.count && `${ing.count} `}
+                            {ing.unit && `${ing.unit} `}
+                            {ing.title}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Instructions */}
+                  {recipe.instructions && Array.isArray(recipe.instructions) && recipe.instructions.length > 0 && (
+                    <div>
+                      <strong style={{ fontSize: 13, display: "block", marginBottom: 8 }}>Instructions</strong>
+                      <ol style={{ margin: "6px 0 0 0", paddingLeft: 20, fontSize: 14 }}>
+                        {recipe.instructions.map((step, i) => {
+                          const isHighlighted = highlightedSteps[recipe.id]?.has(i);
+                          return (
+                            <li 
+                              key={i} 
+                              onClick={() => toggleStepHighlight(recipe.id, i)} 
+                              className={isHighlighted ? "recipe-step highlighted" : "recipe-step"} 
+                              style={{ 
+                                marginTop: 8, 
+                                cursor: "pointer", 
+                                padding: "8px", 
+                                borderRadius: "6px", 
+                                transition: "all 0.2s ease",
+                                lineHeight: "1.6"
+                              }}
+                            >
+                              {step}
+                              {recipe.stepTimers?.[i] && (
+                                <div style={{ marginTop: 8 }}>
+                                  <StepTimerComponent
+                                    recipe={recipe}
+                                    stepIndex={i}
+                                    onUpdate={handleUpdateRecipe}
+                                    editingRecipeId={null}
+                                  />
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }

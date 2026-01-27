@@ -197,9 +197,26 @@ export default function WeatherModule() {
           });
         },
         (err) => {
-          setError("Unable to retrieve your location");
+          let errorMessage = "Unable to retrieve your location";
+          switch (err.code) {
+            case err.PERMISSION_DENIED:
+              errorMessage = "Location permission denied. Please enable location access in your browser settings.";
+              break;
+            case err.POSITION_UNAVAILABLE:
+              errorMessage = "Location information unavailable";
+              break;
+            case err.TIMEOUT:
+              errorMessage = "Location request timed out. Please try again.";
+              break;
+          }
+          setError(errorMessage);
           console.error("Geolocation error:", err);
           resolve(null);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000, // Cache for 5 minutes
         }
       );
     });
