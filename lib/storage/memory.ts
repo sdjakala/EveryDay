@@ -105,6 +105,42 @@ type WeatherLocation = {
   isDefault?: boolean;
 };
 
+type SubjectType = "vehicle" | "house" | "boat" | "equipment" | "other";
+type Subject = {
+  id: string;
+  name: string;
+  type: SubjectType;
+  currentMileage?: number;
+  currentHours?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type MaintenanceStep = {
+  id: string;
+  order: number;
+  description: string;
+  completed?: boolean;
+};
+
+type DurationType = "months" | "days" | "miles" | "hours";
+type MaintenanceTopic = {
+  id: string;
+  subjectId: string;
+  name: string;
+  steps: MaintenanceStep[];
+  tools: string[];
+  lastCompletedDate?: string;
+  lastCompletedMileage?: number;
+  lastCompletedHours?: number;
+  durationValue?: number;
+  durationType?: DurationType;
+  scheduledDate?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 const DATA_DIR = path.join(process.cwd(), "data");
 const RECIPES_FILE = path.join(DATA_DIR, "backend_recipes.json");
 const GROCERY_FILE = path.join(DATA_DIR, "backend_grocery.json");
@@ -126,6 +162,8 @@ const WEATHER_LOCATIONS_FILE = path.join(
   DATA_DIR,
   "backend_weather_locations.json"
 );
+const MAINTENANCE_SUBJECTS_FILE = path.join(DATA_DIR, "backend_maintenance_subjects.json");
+const MAINTENANCE_TOPICS_FILE = path.join(DATA_DIR, "backend_maintenance_topics.json");
 
 function ensureDataDir() {
   try {
@@ -189,6 +227,8 @@ let weatherLocations: WeatherLocation[] = readJson<WeatherLocation[]>(
   WEATHER_LOCATIONS_FILE,
   []
 );
+let maintenanceSubjects: Subject[] = readJson<Subject[]>(MAINTENANCE_SUBJECTS_FILE, []);
+let maintenanceTopics: MaintenanceTopic[] = readJson<MaintenanceTopic[]>(MAINTENANCE_TOPICS_FILE, []);
 
 function persist() {
   if (!SHOULD_PERSIST) return;
@@ -199,6 +239,8 @@ function persist() {
   writeJson(NEWS_SOURCES_FILE, newsSources);
   writeJson(NEWS_CACHE_FILE, newsArticlesCache);
   writeJson(WORKOUT_RESULTS_FILE, workoutResults);
+  writeJson(MAINTENANCE_SUBJECTS_FILE, maintenanceSubjects);
+  writeJson(MAINTENANCE_TOPICS_FILE, maintenanceTopics);
 }
 
 const memoryAdapter = {
@@ -767,6 +809,130 @@ const memoryAdapter = {
     
     writeJson(WEATHER_LOCATIONS_FILE, weatherLocations);
     return true;
+  },
+
+  async getSubjects(_userId?: string): Promise<Subject[]> {
+    return maintenanceSubjects;
+  },
+
+  async getSubject(id: string, _userId?: string): Promise<Subject | null> {
+    return maintenanceSubjects.find((s) => s.id === id) || null;
+  },
+
+  async createSubject(payload: Partial<Subject>, _userId?: string): Promise<Subject> {
+    const now = new Date().toISOString();
+    const subject: Subject = {
+      id: uid(),
+      name: payload.name || "Untitled Subject",
+      type: payload.type || "other",
+      currentMileage: payload.currentMileage,
+      currentHours: payload.currentHours,
+      createdAt: now,
+      updatedAt: now,
+    };
+    maintenanceSubjects = [subject, ...maintenanceSubjects];
+    persist();
+    return subject;
+  },
+
+  async updateSubject(id: string, payload: Partial<Subject>, _userId?: string): Promise<Subject | null> {
+    const now = new Date().toISOString();
+    maintenanceSubjects = maintenanceSubjects.map((s) =>
+      s.id === id ? { ...s, ...payload, updatedAt: now } : s
+    );
+    persist();
+    return maintenanceSubjects.find((s) => s.id === id) || null;
+  },
+
+  async deleteSubject(id: string, _userId?: string): Promise<boolean> {
+    const prev = maintenanceSubjects.length;
+    maintenanceSubjects = maintenanceSubjects.filter((s) => s.id !== id);
+    // Also delete all topics for this subject
+    maintenanceTopics = maintenanceTopics.filter((t) => t.subjectId !== id);
+    persist();
+    return prev !== maintenanceSubjects.length;
+  },
+
+  // Maintenance Topics
+  async getTopics(subjectId?: string, _userId?: string): Promise<MaintenanceTopic[]> {
+    if (subjectId) {
+      return maintenanceTopics.filter((t) => t.subjectId === subjectId);
+    }
+    return maintenanceTopics;
+  },
+
+  async getTopic(id: string, _userId?: string): Promise<MaintenanceTopic | null> {
+    return maintenanceTopics.find((t) => t.id === id) || null;
+  },
+
+  async createTopic(payload: Partial<MaintenanceTopic>, _userId?: string): Promise<MaintenanceTopic> {
+    const now = new Date().toISOString();
+    const topic: MaintenanceTopic = {
+      id: uid(),
+      subjectId: payload.subjectId!,
+      name: payload.name || "Untitled Topic",
+      steps: payload.steps || [],
+      tools: payload.tools || [],
+      lastCompletedDate: payload.lastCompletedDate,
+      lastCompletedMileage: payload.lastCompletedMileage,
+      lastCompletedHours: payload.lastCompletedHours,
+      durationValue: payload.durationValue,
+      durationType: payload.durationType,
+      scheduledDate: payload.scheduledDate,
+      notes: payload.notes,
+      createdAt: now,
+      updatedAt: now,
+    };
+    maintenanceTopics = [topic, ...maintenanceTopics];
+    persist();
+    return topic;
+  },
+
+  async updateTopic(id: string, payload: Partial<MaintenanceTopic>, _userId?: string): Promise<MaintenanceTopic | null> {
+    const now = new Date().toISOString();
+    maintenanceTopics = maintenanceTopics.map((t) =>
+      t.id === id ? { ...t, ...payload, updatedAt: now } : t
+    );
+    persist();
+    return maintenanceTopics.find((t) => t.id === id) || null;
+  },
+
+  async deleteTopic(id: string, _userId?: string): Promise<boolean> {
+    const prev = maintenanceTopics.length;
+    maintenanceTopics = maintenanceTopics.filter((t) => t.id !== id);
+    persist();
+    return prev !== maintenanceTopics.length;
+  },
+
+  async completeTopicMaintenance(
+    id: string,
+    completionData: {
+      date: string;
+      mileage?: number;
+      hours?: number;
+      notes?: string;
+    },
+    _userId?: string
+  ): Promise<MaintenanceTopic | null> {
+    const topic = maintenanceTopics.find((t) => t.id === id);
+    if (!topic) return null;
+
+    const now = new Date().toISOString();
+    const updated: MaintenanceTopic = {
+      ...topic,
+      lastCompletedDate: completionData.date,
+      lastCompletedMileage: completionData.mileage,
+      lastCompletedHours: completionData.hours,
+      notes: completionData.notes || topic.notes,
+      steps: topic.steps.map(s => ({ ...s, completed: false })), // Reset steps
+      updatedAt: now,
+    };
+
+    maintenanceTopics = maintenanceTopics.map((t) =>
+      t.id === id ? updated : t
+    );
+    persist();
+    return updated;
   },
 
 };

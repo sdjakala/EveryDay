@@ -1,5 +1,5 @@
 // Generate version from timestamp or manually update when deploying
-const VERSION = "1.1.0"; // UPDATE THIS WHEN DEPLOYING NEW CHANGES
+const VERSION = "1.1.1"; // UPDATED - Fixed auth callback issue
 const CACHE_NAME = `everyday-v${VERSION}`;
 const urlsToCache = ["/", "/styles/globals.css", "/manifest.json"];
 
@@ -40,6 +40,12 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
+  // CRITICAL: Never intercept auth routes - let them go directly to the network
+  if (url.pathname.startsWith("/api/auth/")) {
+    // Just pass through to network without any caching or interception
+    return;
+  }
+
   // Never cache API requests - always fetch fresh
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(event.request));
@@ -48,6 +54,12 @@ self.addEventListener("fetch", (event) => {
 
   // Only cache GET requests for non-API resources
   if (event.request.method !== "GET") {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Don't cache requests to external domains (like Google OAuth)
+  if (url.origin !== self.location.origin) {
     event.respondWith(fetch(event.request));
     return;
   }

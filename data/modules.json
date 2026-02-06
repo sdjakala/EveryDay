@@ -54,11 +54,18 @@
   }
   ,
   {
-  "name": "wild-schedule",
-  "title": "Game Center",
-  "description": "",
-  "enabled": true,
-  "minRank": 1
-}
+    "name": "wild-schedule",
+    "title": "Game Center",
+    "description": "",
+    "enabled": true,
+    "minRank": 1
+  },
+  {
+    "name": "maintenance",
+    "title": "Maintenance",
+    "description": "Track maintenance for vehicles, houses, boats, and equipment",
+    "enabled": true,
+    "minRank": 0
+  }
 
 ]

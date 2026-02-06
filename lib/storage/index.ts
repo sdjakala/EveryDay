@@ -137,6 +137,20 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
       adapter.deleteWeatherLocation(id, userId),
     setDefaultWeatherLocation: (id: string) =>
       adapter.setDefaultWeatherLocation(id, userId),
+    getSubjects: () => adapter.getSubjects(userId),
+    getSubject: (id: string) => adapter.getSubject(id, userId),
+    createSubject: (payload: any) => adapter.createSubject(payload, userId),
+    updateSubject: (id: string, payload: any) =>
+      adapter.updateSubject(id, payload, userId),
+    deleteSubject: (id: string) => adapter.deleteSubject(id, userId),
+    getTopics: (subjectId?: string) => adapter.getTopics(subjectId, userId),
+    getTopic: (id: string) => adapter.getTopic(id, userId),
+    createTopic: (payload: any) => adapter.createTopic(payload, userId),
+    updateTopic: (id: string, payload: any) =>
+      adapter.updateTopic(id, payload, userId),
+    deleteTopic: (id: string) => adapter.deleteTopic(id, userId),
+    completeTopicMaintenance: (id: string, completionData: any) =>
+      adapter.completeTopicMaintenance(id, completionData, userId),
   };
 }
 
