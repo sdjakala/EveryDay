@@ -167,17 +167,6 @@ type TrafficAlert = {
 };
 
 type SubjectType = "vehicle" | "house" | "boat" | "equipment" | "other";
-type Subject = {
-  id: string;
-  name: string;
-  type: SubjectType;
-  currentMileage?: number;
-  currentHours?: number;
-  createdAt?: string;
-  updatedAt?: string;
-  userId?: string;
-  sharedWith?: string[];
-};
 
 type MaintenanceStep = {
   id: string;
@@ -187,9 +176,11 @@ type MaintenanceStep = {
 };
 
 type DurationType = "months" | "days" | "miles" | "hours";
+
+// UPDATED: MaintenanceTopic no longer has subjectId
 type MaintenanceTopic = {
   id: string;
-  subjectId: string;
+  // subjectId: string;  ← REMOVED - topics are now nested
   name: string;
   steps: MaintenanceStep[];
   tools: string[];
@@ -200,6 +191,19 @@ type MaintenanceTopic = {
   durationType?: DurationType;
   scheduledDate?: string;
   notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  // Note: No userId or sharedWith here - these are inherited from parent Subject
+};
+
+// UPDATED: Subject now includes topics array
+type Subject = {
+  id: string;
+  name: string;
+  type: SubjectType;
+  topics: MaintenanceTopic[];  // ← ADDED - topics are nested here!
+  currentMileage?: number;
+  currentHours?: number;
   createdAt?: string;
   updatedAt?: string;
   userId?: string;
@@ -230,8 +234,6 @@ const weatherLocationsContainerId =
   process.env.COSMOS_CONTAINER_WEATHER_LOCATIONS || "WeatherLocations";
 const maintenanceSubjectsContainerId =
   process.env.COSMOS_CONTAINER_MAINTENANCE_SUBJECTS || "MaintenanceSubjects";
-const maintenanceTopicsContainerId =
-  process.env.COSMOS_CONTAINER_MAINTENANCE_TOPICS || "MaintenanceTopics";
 
 let client: CosmosClient | null = null;
 
@@ -1829,19 +1831,23 @@ const cosmosAdapter = {
       .database(databaseId)
       .container(maintenanceSubjectsContainerId);
 
+    let query;
     if (!userId) {
-      const { resources } = await container.items
-        .query("SELECT * FROM c ORDER BY c.createdAt DESC")
-        .fetchAll();
-      return resources as Subject[];
+      query = "SELECT * FROM c ORDER BY c.createdAt DESC";
+    } else {
+      query = {
+        query: `SELECT * FROM c WHERE ${buildAccessFilter(userId)} ORDER BY c.createdAt DESC`,
+        parameters: [{ name: "@userId", value: userId }],
+      };
     }
 
-    const query = {
-      query: `SELECT * FROM c WHERE ${buildAccessFilter(userId)} ORDER BY c.createdAt DESC`,
-      parameters: [{ name: "@userId", value: userId }],
-    };
     const { resources } = await container.items.query(query).fetchAll();
-    return resources as Subject[];
+    
+    // Ensure all subjects have topics array
+    return resources.map(subject => ({
+      ...subject,
+      topics: subject.topics || []
+    })) as Subject[];
   },
 
   async getSubject(id: string, userId?: string): Promise<Subject | null> {
@@ -1849,6 +1855,7 @@ const cosmosAdapter = {
     const container = client
       .database(databaseId)
       .container(maintenanceSubjectsContainerId);
+    
     try {
       const { resource } = await container.item(id, id).read<Subject>();
       if (!resource) return null;
@@ -1861,7 +1868,11 @@ const cosmosAdapter = {
         return null;
       }
 
-      return resource || null;
+      // Ensure topics array exists
+      return {
+        ...resource,
+        topics: resource.topics || []
+      };
     } catch (e: any) {
       if (e.code === 404) return null;
       throw e;
@@ -1876,11 +1887,13 @@ const cosmosAdapter = {
     const container = client
       .database(databaseId)
       .container(maintenanceSubjectsContainerId);
+    
     const now = new Date().toISOString();
     const subject: Subject = {
       id: uid(),
       name: payload.name || "Untitled Subject",
       type: payload.type || "other",
+      topics: [],  // Initialize with empty topics array
       currentMileage: payload.currentMileage,
       currentHours: payload.currentHours,
       createdAt: now,
@@ -1888,6 +1901,7 @@ const cosmosAdapter = {
       userId: userId,
       sharedWith: [],
     };
+    
     const { resource } = await container.items.create(subject);
     return resource as Subject;
   },
@@ -1903,7 +1917,9 @@ const cosmosAdapter = {
       .container(maintenanceSubjectsContainerId);
 
     try {
-      const { resource: existing } = await container.item(id, id).read<Subject>();
+      const { resource: existing } = await container
+        .item(id, id)
+        .read<Subject>();
       if (!existing) return null;
 
       // Check access
@@ -1919,6 +1935,7 @@ const cosmosAdapter = {
         ...existing,
         ...payload,
         id: existing.id,
+        topics: existing.topics || [],  // Preserve topics
         userId: existing.userId,
         updatedAt: new Date().toISOString(),
       };
@@ -1936,6 +1953,7 @@ const cosmosAdapter = {
     const container = client
       .database(databaseId)
       .container(maintenanceSubjectsContainerId);
+    
     try {
       const existing = await this.getSubject(id, userId);
       if (!existing) return false;
@@ -1945,17 +1963,7 @@ const cosmosAdapter = {
       }
 
       await container.item(id, id).delete();
-      
-      // Also delete all topics for this subject
-      const topics = await this.getTopics(id, userId);
-      const topicsContainer = client
-        .database(databaseId)
-        .container(maintenanceTopicsContainerId);
-      
-      await Promise.all(
-        topics.map(topic => topicsContainer.item(topic.id, topic.id).delete())
-      );
-
+      // Topics are automatically deleted since they're nested in the subject
       return true;
     } catch (e: any) {
       if (e.code === 404) return false;
@@ -1963,85 +1971,41 @@ const cosmosAdapter = {
     }
   },
 
-  // ========================================================================
-  // MAINTENANCE TOPICS
-  // ========================================================================
-
-  async getTopics(subjectId?: string, userId?: string): Promise<MaintenanceTopic[]> {
-    const client = getClient();
-    const container = client
-      .database(databaseId)
-      .container(maintenanceTopicsContainerId);
-
-    let query;
-    if (!userId) {
-      // No user filter
-      if (subjectId) {
-        query = {
-          query: "SELECT * FROM c WHERE c.subjectId = @subjectId ORDER BY c.createdAt DESC",
-          parameters: [{ name: "@subjectId", value: subjectId }],
-        };
-      } else {
-        query = "SELECT * FROM c ORDER BY c.createdAt DESC";
-      }
-    } else {
-      // Filter by user access
-      if (subjectId) {
-        query = {
-          query: `SELECT * FROM c WHERE c.subjectId = @subjectId AND ${buildAccessFilter(userId)} ORDER BY c.createdAt DESC`,
-          parameters: [
-            { name: "@subjectId", value: subjectId },
-            { name: "@userId", value: userId }
-          ],
-        };
-      } else {
-        query = {
-          query: `SELECT * FROM c WHERE ${buildAccessFilter(userId)} ORDER BY c.createdAt DESC`,
-          parameters: [{ name: "@userId", value: userId }],
-        };
-      }
-    }
-
-    const { resources } = await container.items.query(query).fetchAll();
-    return resources as MaintenanceTopic[];
-  },
-
-  async getTopic(id: string, userId?: string): Promise<MaintenanceTopic | null> {
-    const client = getClient();
-    const container = client
-      .database(databaseId)
-      .container(maintenanceTopicsContainerId);
-    try {
-      const { resource } = await container.item(id, id).read<MaintenanceTopic>();
-      if (!resource) return null;
-
-      if (
-        userId &&
-        resource.userId !== userId &&
-        !resource.sharedWith?.includes(userId)
-      ) {
-        return null;
-      }
-
-      return resource || null;
-    } catch (e: any) {
-      if (e.code === 404) return null;
-      throw e;
-    }
-  },
+  // ===========================================================================
+  // MAINTENANCE TOPICS (now nested within subjects)
+  // ===========================================================================
 
   async createTopic(
+    subjectId: string,
     payload: Partial<MaintenanceTopic>,
     userId?: string
   ): Promise<MaintenanceTopic> {
     const client = getClient();
     const container = client
       .database(databaseId)
-      .container(maintenanceTopicsContainerId);
+      .container(maintenanceSubjectsContainerId);
+
+    // Get the subject
+    const { resource: subject } = await container
+      .item(subjectId, subjectId)
+      .read<Subject>();
+    
+    if (!subject) {
+      throw new Error("Subject not found");
+    }
+
+    // Check access
+    if (
+      userId &&
+      subject.userId !== userId &&
+      !subject.sharedWith?.includes(userId)
+    ) {
+      throw new Error("Access denied");
+    }
+
     const now = new Date().toISOString();
     const topic: MaintenanceTopic = {
       id: uid(),
-      subjectId: payload.subjectId!,
       name: payload.name || "Untitled Topic",
       steps: payload.steps || [],
       tools: payload.tools || [],
@@ -2054,69 +2018,123 @@ const cosmosAdapter = {
       notes: payload.notes,
       createdAt: now,
       updatedAt: now,
-      userId: userId,
-      sharedWith: [],
     };
-    const { resource } = await container.items.create(topic);
-    return resource as MaintenanceTopic;
+
+    // Add topic to subject's topics array
+    subject.topics = subject.topics || [];
+    subject.topics = [topic, ...subject.topics];
+    subject.updatedAt = now;
+
+    // Save updated subject
+    const { resource } = await container
+      .item(subjectId, subjectId)
+      .replace(subject);
+    
+    return topic;
   },
 
   async updateTopic(
-    id: string,
+    subjectId: string,
+    topicId: string,
     payload: Partial<MaintenanceTopic>,
     userId?: string
   ): Promise<MaintenanceTopic | null> {
     const client = getClient();
     const container = client
       .database(databaseId)
-      .container(maintenanceTopicsContainerId);
+      .container(maintenanceSubjectsContainerId);
 
     try {
-      const { resource: existing } = await container
-        .item(id, id)
-        .read<MaintenanceTopic>();
-      if (!existing) return null;
+      // Get the subject
+      const { resource: subject } = await container
+        .item(subjectId, subjectId)
+        .read<Subject>();
+      
+      if (!subject) return null;
 
       // Check access
       if (
         userId &&
-        existing.userId !== userId &&
-        !existing.sharedWith?.includes(userId)
+        subject.userId !== userId &&
+        !subject.sharedWith?.includes(userId)
       ) {
         return null;
       }
 
-      const updated: MaintenanceTopic = {
-        ...existing,
-        ...payload,
-        id: existing.id,
-        subjectId: existing.subjectId,
-        userId: existing.userId,
-        updatedAt: new Date().toISOString(),
-      };
+      // Ensure topics array exists
+      subject.topics = subject.topics || [];
 
-      const { resource } = await container.item(id, id).replace(updated);
-      return resource as MaintenanceTopic;
+      // Find and update the topic
+      let updatedTopic: MaintenanceTopic | null = null;
+      const now = new Date().toISOString();
+      
+      subject.topics = subject.topics.map((t) => {
+        if (t.id === topicId) {
+          updatedTopic = {
+            ...t,
+            ...payload,
+            id: t.id,  // Preserve ID
+            updatedAt: now,
+          };
+          return updatedTopic;
+        }
+        return t;
+      });
+
+      if (!updatedTopic) return null;
+
+      // Save updated subject
+      subject.updatedAt = now;
+      await container.item(subjectId, subjectId).replace(subject);
+
+      return updatedTopic;
     } catch (e: any) {
       if (e.code === 404) return null;
       throw e;
     }
   },
 
-  async deleteTopic(id: string, userId?: string): Promise<boolean> {
+  async deleteTopic(
+    subjectId: string,
+    topicId: string,
+    userId?: string
+  ): Promise<boolean> {
     const client = getClient();
     const container = client
       .database(databaseId)
-      .container(maintenanceTopicsContainerId);
-    try {
-      const existing = await this.getTopic(id, userId);
-      if (!existing) return false;
+      .container(maintenanceSubjectsContainerId);
 
-      if (userId && existing.userId !== userId) {
+    try {
+      // Get the subject
+      const { resource: subject } = await container
+        .item(subjectId, subjectId)
+        .read<Subject>();
+      
+      if (!subject) return false;
+
+      // Check access
+      if (
+        userId &&
+        subject.userId !== userId &&
+        !subject.sharedWith?.includes(userId)
+      ) {
         return false;
       }
 
-      await container.item(id, id).delete();
+      // Ensure topics array exists
+      subject.topics = subject.topics || [];
+
+      const originalLength = subject.topics.length;
+      subject.topics = subject.topics.filter((t) => t.id !== topicId);
+
+      if (subject.topics.length === originalLength) {
+        return false; // Topic not found
+      }
+
+      // Save updated subject
+      subject.updatedAt = new Date().toISOString();
+      await container.item(subjectId, subjectId).replace(subject);
+
       return true;
     } catch (e: any) {
       if (e.code === 404) return false;
@@ -2125,7 +2143,8 @@ const cosmosAdapter = {
   },
 
   async completeTopicMaintenance(
-    id: string,
+    subjectId: string,
+    topicId: string,
     completionData: {
       date: string;
       mileage?: number;
@@ -2137,35 +2156,55 @@ const cosmosAdapter = {
     const client = getClient();
     const container = client
       .database(databaseId)
-      .container(maintenanceTopicsContainerId);
+      .container(maintenanceSubjectsContainerId);
 
     try {
-      const { resource: existing } = await container
-        .item(id, id)
-        .read<MaintenanceTopic>();
-      if (!existing) return null;
+      // Get the subject
+      const { resource: subject } = await container
+        .item(subjectId, subjectId)
+        .read<Subject>();
+      
+      if (!subject) return null;
 
       // Check access
       if (
         userId &&
-        existing.userId !== userId &&
-        !existing.sharedWith?.includes(userId)
+        subject.userId !== userId &&
+        !subject.sharedWith?.includes(userId)
       ) {
         return null;
       }
 
-      const updated: MaintenanceTopic = {
-        ...existing,
-        lastCompletedDate: completionData.date,
-        lastCompletedMileage: completionData.mileage,
-        lastCompletedHours: completionData.hours,
-        notes: completionData.notes || existing.notes,
-        steps: existing.steps.map(s => ({ ...s, completed: false })), // Reset steps
-        updatedAt: new Date().toISOString(),
-      };
+      // Ensure topics array exists
+      subject.topics = subject.topics || [];
 
-      const { resource } = await container.item(id, id).replace(updated);
-      return resource as MaintenanceTopic;
+      // Find and update the topic
+      let completedTopic: MaintenanceTopic | null = null;
+      const now = new Date().toISOString();
+      
+      subject.topics = subject.topics.map((t) => {
+        if (t.id === topicId) {
+          completedTopic = {
+            ...t,
+            lastCompletedDate: completionData.date,
+            lastCompletedMileage: completionData.mileage,
+            lastCompletedHours: completionData.hours,
+            notes: completionData.notes || t.notes,
+            steps: t.steps?.map(s => ({ ...s, completed: false })) || [],
+            updatedAt: now,
+          };
+          return completedTopic;
+        }
+        return t;
+      });
+
+      if (!completedTopic) return null;
+
+      // Save updated subject
+      subject.updatedAt = now;
+      await container.item(subjectId, subjectId).replace(subject);
+
+      return completedTopic;
     } catch (e: any) {
       if (e.code === 404) return null;
       throw e;

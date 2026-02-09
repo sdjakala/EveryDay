@@ -143,14 +143,16 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
     updateSubject: (id: string, payload: any) =>
       adapter.updateSubject(id, payload, userId),
     deleteSubject: (id: string) => adapter.deleteSubject(id, userId),
-    getTopics: (subjectId?: string) => adapter.getTopics(subjectId, userId),
-    getTopic: (id: string) => adapter.getTopic(id, userId),
-    createTopic: (payload: any) => adapter.createTopic(payload, userId),
-    updateTopic: (id: string, payload: any) =>
-      adapter.updateTopic(id, payload, userId),
-    deleteTopic: (id: string) => adapter.deleteTopic(id, userId),
-    completeTopicMaintenance: (id: string, completionData: any) =>
-      adapter.completeTopicMaintenance(id, completionData, userId),
+
+    // Maintenance - Topics (now require subjectId)
+    createTopic: (subjectId: string, payload: any) => 
+      adapter.createTopic(subjectId, payload, userId),
+    updateTopic: (subjectId: string, topicId: string, payload: any) =>
+      adapter.updateTopic(subjectId, topicId, payload, userId),
+    deleteTopic: (subjectId: string, topicId: string) => 
+      adapter.deleteTopic(subjectId, topicId, userId),
+    completeTopicMaintenance: (subjectId: string, topicId: string, completionData: any) =>
+      adapter.completeTopicMaintenance(subjectId, topicId, completionData, userId),
   };
 }
 

@@ -1,16 +1,6 @@
 // Subject types (Vehicle, House, Boat, etc.)
 export type SubjectType = "vehicle" | "house" | "boat" | "equipment" | "other";
 
-export type Subject = {
-  id: string;
-  name: string;                    // e.g., "2015 Honda Civic"
-  type: SubjectType;
-  currentMileage?: number;         // For vehicles
-  currentHours?: number;           // For boats/equipment
-  createdAt: string;
-  updatedAt: string;
-};
-
 // Maintenance step within a topic
 export type MaintenanceStep = {
   id: string;
@@ -23,9 +13,9 @@ export type MaintenanceStep = {
 export type DurationType = "months" | "days" | "miles" | "hours";
 
 // Topic (Oil Change, Filter Replacement, etc.)
+// NOTE: subjectId removed since topics are now nested inside subjects
 export type MaintenanceTopic = {
   id: string;
-  subjectId: string;               // Links to parent subject
   name: string;                    // e.g., "Oil Change"
   steps: MaintenanceStep[];        // Ordered steps
   tools: string[];                 // ["wrench", "paper towels"]
@@ -36,6 +26,18 @@ export type MaintenanceTopic = {
   durationType?: DurationType;
   scheduledDate?: string;          // Optional calendar date
   notes?: string;                  // Optional notes
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Subject with nested topics
+export type Subject = {
+  id: string;
+  name: string;                    // e.g., "2015 Honda Civic"
+  type: SubjectType;
+  topics: MaintenanceTopic[];      // NESTED TOPICS
+  currentMileage?: number;         // For vehicles
+  currentHours?: number;           // For boats/equipment
   createdAt: string;
   updatedAt: string;
 };
@@ -121,12 +123,8 @@ export function calculateMaintenanceStatus(
     }
 
     case "miles": {
-      if (subject.type !== "vehicle" || subject.currentMileage === undefined) {
-        result.statusText = "Current mileage not set";
-        return result;
-      }
-      if (topic.lastCompletedMileage === undefined) {
-        result.statusText = "Last service mileage not recorded";
+      if (!subject.currentMileage || !topic.lastCompletedMileage) {
+        result.statusText = "Mileage not tracked";
         return result;
       }
       const milesPassed = subject.currentMileage - topic.lastCompletedMileage;
@@ -144,12 +142,8 @@ export function calculateMaintenanceStatus(
     }
 
     case "hours": {
-      if (subject.currentHours === undefined) {
-        result.statusText = "Current hours not set";
-        return result;
-      }
-      if (topic.lastCompletedHours === undefined) {
-        result.statusText = "Last service hours not recorded";
+      if (!subject.currentHours || !topic.lastCompletedHours) {
+        result.statusText = "Hours not tracked";
         return result;
       }
       const hoursPassed = subject.currentHours - topic.lastCompletedHours;
@@ -167,7 +161,7 @@ export function calculateMaintenanceStatus(
     }
   }
 
-  // Set urgency based on percentage remaining
+  // Set urgency based on percentage
   if (result.isOverdue) {
     result.urgency = "overdue";
   } else if (result.percentRemaining < 25) {
