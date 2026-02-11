@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from "react";
 import Icon from "../../components/Icon";
 
-type Task = { id: string; title: string; completed?: boolean };
+type Task = { 
+  id: string; 
+  title: string; 
+  completed?: boolean;
+  parentId?: string;
+  subtasks?: Task[];
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 function playCheckSound() {
   try {
@@ -57,7 +65,27 @@ export default function TasksModule() {
       const res = await fetch("/api/tasks");
       if (res.ok) {
         const data = await res.json();
-        setTasks(data.tasks || []);
+        const allTasks = data.tasks || [];
+        
+        // Organize tasks into parent/subtask structure
+        const parentTasks = allTasks.filter((t: Task) => !t.parentId);
+        const subtasksByParent = allTasks
+          .filter((t: Task) => t.parentId)
+          .reduce((acc: Record<string, Task[]>, task: Task) => {
+            if (!acc[task.parentId!]) {
+              acc[task.parentId!] = [];
+            }
+            acc[task.parentId!].push(task);
+            return acc;
+          }, {});
+        
+        // Attach subtasks to their parents
+        const organizedTasks = parentTasks.map((parent: Task) => ({
+          ...parent,
+          subtasks: subtasksByParent[parent.id] || [],
+        }));
+        
+        setTasks(organizedTasks);
       }
     } catch (e) {
       console.error("Failed to fetch tasks:", e);
@@ -86,10 +114,48 @@ export default function TasksModule() {
     }
   }
 
-  async function toggle(id: string) {
-    const task = tasks.find((t) => t.id === id);
+  async function addSubtask(parentId: string) {
+    const title = text.trim();
+    if (!title) return;
+    
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, completed: false, parentId }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        // Update the parent task's subtasks array
+        setTasks((prevTasks) => prevTasks.map((t) => {
+          if (t.id === parentId) {
+            return {
+              ...t,
+              subtasks: [...(t.subtasks || []), created],
+            };
+          }
+          return t;
+        }));
+        setText("");
+      }
+    } catch (e) {
+      console.error("Failed to create subtask:", e);
+    }
+  }
+
+  async function toggle(id: string, parentId?: string) {
+    // Find the task
+    let task: Task | undefined;
+    if (parentId) {
+      const parent = tasks.find((t) => t.id === parentId);
+      task = parent?.subtasks?.find((st) => st.id === id);
+    } else {
+      task = tasks.find((t) => t.id === id);
+    }
+    
     if (!task) return;
     playCheckSound();
+    
     try {
       const res = await fetch(`/api/tasks/${id}`, {
         method: "PATCH",
@@ -98,20 +164,63 @@ export default function TasksModule() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setTasks((s) => s.map((t) => (t.id === id ? updated : t)));
+        
+        if (parentId) {
+          // Update subtask
+          setTasks((s) => s.map((t) => {
+            if (t.id === parentId) {
+              return {
+                ...t,
+                subtasks: (t.subtasks || []).map((st) =>
+                  st.id === id ? updated : st
+                ),
+              };
+            }
+            return t;
+          }));
+        } else {
+          // Update parent task (and cascade to subtasks if marking as complete)
+          setTasks((s) => s.map((t) => {
+            if (t.id === id) {
+              // If marking parent as complete, also mark all subtasks as complete
+              if (updated.completed && t.subtasks && t.subtasks.length > 0) {
+                return {
+                  ...updated,
+                  subtasks: t.subtasks.map((st) => ({ ...st, completed: true })),
+                };
+              }
+              return { ...t, ...updated };
+            }
+            return t;
+          }));
+        }
       }
     } catch (e) {
       console.error("Failed to toggle task:", e);
     }
   }
 
-  async function remove(id: string) {
+  async function remove(id: string, parentId?: string) {
     try {
       const res = await fetch(`/api/tasks/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        setTasks((s) => s.filter((t) => t.id !== id));
+        if (parentId) {
+          // Remove subtask
+          setTasks((s) => s.map((t) => {
+            if (t.id === parentId) {
+              return {
+                ...t,
+                subtasks: (t.subtasks || []).filter((st) => st.id !== id),
+              };
+            }
+            return t;
+          }));
+        } else {
+          // Remove parent task
+          setTasks((s) => s.filter((t) => t.id !== id));
+        }
       }
     } catch (e) {
       console.error("Failed to delete task:", e);
@@ -125,12 +234,12 @@ export default function TasksModule() {
     }
   }
 
-  function startEdit(t: Task) {
-    setEditingId(t.id);
+  function startEdit(t: Task, parentId?: string) {
+    setEditingId(parentId ? `${parentId}-${t.id}` : t.id);
     setEditText(t.title);
   }
 
-  async function saveEdit(id: string) {
+  async function saveEdit(id: string, parentId?: string) {
     const v = editText.trim();
     if (!v) return;
     try {
@@ -141,12 +250,37 @@ export default function TasksModule() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setTasks((s) => s.map((t) => (t.id === id ? updated : t)));
+        
+        if (parentId) {
+          // Update subtask
+          setTasks((s) => s.map((t) => {
+            if (t.id === parentId) {
+              return {
+                ...t,
+                subtasks: (t.subtasks || []).map((st) =>
+                  st.id === id ? updated : st
+                ),
+              };
+            }
+            return t;
+          }));
+        } else {
+          // Update parent task
+          setTasks((s) => s.map((t) => (t.id === id ? { ...t, ...updated } : t)));
+        }
+        
         setEditingId(null);
         setEditText("");
       }
     } catch (e) {
       console.error("Failed to update task:", e);
+    }
+  }
+
+  function handleTaskClick(task: Task) {
+    // If there's text in the input, add it as a subtask
+    if (text.trim()) {
+      addSubtask(task.id);
     }
   }
 
@@ -158,11 +292,86 @@ export default function TasksModule() {
     );
   }
 
-  const visibleTasks = tasks.filter((t) =>
+  // Filter to only show parent tasks (tasks without parentId)
+  const parentTasks = tasks.filter((t) => !t.parentId);
+  const visibleTasks = parentTasks.filter((t) =>
     showCompleted ? true : !t.completed
   );
 
-  const completedCount = tasks.filter(t => t.completed).length;
+  const completedCount = parentTasks.filter(t => t.completed).length;
+
+  // Helper to render a task item
+  const renderTask = (t: Task, parentId?: string, isSubtask = false) => {
+    const editKey = parentId ? `${parentId}-${t.id}` : t.id;
+    const isEditing = editingId === editKey;
+
+    return (
+      <div 
+        className={`task-item ${isSubtask ? 'subtask' : ''}`} 
+        key={t.id}
+        style={isSubtask ? { marginLeft: '2rem' } : {}}
+      >
+        <button
+          type="button"
+          className="task-checkbox"
+          onClick={() => toggle(t.id, parentId)}
+          aria-label={t.completed ? "Mark as incomplete" : "Mark as complete"}
+        >
+          {t.completed ? <Icon name="check" size={14} /> : null}
+        </button>
+
+        {isEditing ? (
+          <input
+            className="task-edit-input"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onBlur={() => saveEdit(t.id, parentId)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveEdit(t.id, parentId);
+              if (e.key === "Escape") {
+                setEditingId(null);
+                setEditText("");
+              }
+            }}
+            autoFocus
+          />
+        ) : (
+          <div
+            className={`task-title ${t.completed ? "completed" : ""}`}
+            onClick={() => !isSubtask && text.trim() ? handleTaskClick(t) : toggle(t.id, parentId)}
+            style={{ 
+              cursor: "pointer", 
+              flex: 1,
+              background: !isSubtask && text.trim() ? "rgba(37, 244, 238, 0.1)" : "transparent",
+              borderRadius: !isSubtask && text.trim() ? "4px" : "0",
+              padding: !isSubtask && text.trim() ? "4px 8px" : "0",
+              transition: "all 0.2s"
+            }}
+            title={!isSubtask && text.trim() ? "Click to add subtask" : ""}
+          >
+            {t.title}
+          </div>
+        )}
+
+        <div className="task-actions">
+          <button
+            className="task-action-btn"
+            onClick={() => isEditing ? saveEdit(t.id, parentId) : startEdit(t, parentId)}
+            title={isEditing ? "Save" : "Edit"}
+          >
+            <Icon name="edit" />
+          </button>
+          <button 
+            className="task-action-btn" 
+            onClick={() => remove(t.id, parentId)}
+            title="Delete"
+          >
+            <Icon name="trash" />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="module-card">
@@ -185,7 +394,20 @@ export default function TasksModule() {
         <button type="submit" className="task-add-btn">
           <Icon name="plus" /> Add
         </button>
-      </form>      
+      </form>
+
+      {text.trim() && (
+        <div style={{
+          padding: "0.5rem",
+          marginBottom: "1rem",
+          background: "rgba(37, 244, 238, 0.1)",
+          borderRadius: "6px",
+          fontSize: "0.85rem",
+          color: "var(--muted)"
+        }}>
+          💡 Tip: Click a task below to add "{text}" as a subtask, or click Add to create a parent task
+        </div>
+      )}      
 
       {/* Filter Buttons */}
       <div style={{ 
@@ -238,70 +460,37 @@ export default function TasksModule() {
       ) : (
         <div className="tasks-list">
           {visibleTasks.map((t) => (
-            <div className="task-item" key={t.id}>
-              <button
-                type="button"
-                className="task-checkbox"
-                onClick={() => toggle(t.id)}
-                aria-label={t.completed ? "Mark as incomplete" : "Mark as complete"}
-              >
-                {t.completed ? <Icon name="check" size={14} /> : null}
-              </button>
-
-              {editingId === t.id ? (
-                <input
-                  className="task-edit-input"
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  onBlur={() => saveEdit(t.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveEdit(t.id);
-                    if (e.key === "Escape") {
-                      setEditingId(null);
-                      setEditText("");
-                    }
-                  }}
-                  autoFocus
-                />
-              ) : (
-                <div
-                  className={`task-title ${t.completed ? "completed" : ""}`}
-                  onClick={() => toggle(t.id)}
-                  style={{ cursor: "pointer", flex: 1 }}
-                >
-                  {t.title}
-                </div>
+            <React.Fragment key={t.id}>
+              {renderTask(t)}
+              {/* Render subtasks */}
+              {t.subtasks && t.subtasks.length > 0 && (
+                <>
+                  {t.subtasks
+                    .filter((st) => showCompleted ? true : !st.completed)
+                    .map((st) => renderTask(st, t.id, true))}
+                </>
               )}
-
-              <div className="task-actions">
-                <button
-                  className="task-action-btn"
-                  onClick={() => editingId === t.id ? saveEdit(t.id) : startEdit(t)}
-                  title={editingId === t.id ? "Save" : "Edit"}
-                >
-                  <Icon name="edit" />
-                </button>
-                <button 
-                  className="task-action-btn" 
-                  onClick={() => remove(t.id)}
-                  title="Delete"
-                >
-                  <Icon name="trash" />
-                </button>
-              </div>
-            </div>
+            </React.Fragment>
           ))}
         </div>
       )}
+      
       <div style={{ marginBottom: "1rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
           <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
-            {tasks.length - completedCount} active
+            {parentTasks.length - completedCount} active
             {completedCount > 0 && ` • ${completedCount} completed`}
           </div>
         </div>
       </div>
+
+      <style jsx>{`
+        .subtask {
+          margin-left: 2rem;
+          border-left: 2px solid rgba(255, 255, 255, 0.1);
+          padding-left: 0.5rem;
+        }
+      `}</style>
     </div>
-    
   );
 }

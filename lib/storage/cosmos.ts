@@ -82,6 +82,7 @@ type Task = {
   id: string;
   title: string;
   completed?: boolean;
+  parentId?: string;
   createdAt?: string;
   updatedAt?: string;
   userId?: string; // Owner of the task
@@ -660,6 +661,7 @@ const cosmosAdapter = {
     const newTask: Task = {
       id: uid(),
       title: payload.title || "Untitled Task",
+      parentId: payload.parentId,
       completed: payload.completed || false,
       createdAt: new Date().toISOString(),
       userId: userId, // Set owner

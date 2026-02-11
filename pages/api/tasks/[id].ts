@@ -25,10 +25,32 @@ export default async function handler(
       if (!updated) {
         return res.status(404).json({ error: "Task not found" });
       }
+      
+      // If marking a parent task as complete, also complete all subtasks
+      if (req.body?.completed === true && !updated.parentId) {
+        const allTasks = await storage.getTasks();
+        const subtasks = allTasks.filter((t: any) => t.parentId === id);
+        
+        // Mark all subtasks as complete
+        for (const subtask of subtasks) {
+          if (!subtask.completed) {
+            await storage.updateTask(subtask.id, { completed: true });
+          }
+        }
+      }
+      
       return res.status(200).json(updated);
     }
 
     if (req.method === "DELETE") {
+      // Delete all subtasks first
+      const allTasks = await storage.getTasks();
+      const subtasks = allTasks.filter((t: any) => t.parentId === id);
+      for (const subtask of subtasks) {
+        await storage.deleteTask(subtask.id);
+      }
+      
+      // Then delete the parent task
       const ok = await storage.deleteTask(id);
       return res.status(ok ? 200 : 404).json({ deleted: ok });
     }

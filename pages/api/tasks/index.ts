@@ -14,11 +14,11 @@ export default async function handler(
     }
 
     if (req.method === "POST") {
-      const { title, completed } = req.body || {};
+      const { title, completed, parentId } = req.body || {};
       if (!title) {
         return res.status(400).json({ error: "title required" });
       }
-      const created = await storage.createTask({ title, completed });
+      const created = await storage.createTask({ title, completed, parentId });
       return res.status(201).json(created);
     }
 

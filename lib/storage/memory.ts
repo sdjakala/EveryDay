@@ -23,6 +23,7 @@ type Item = {
 type Task = {
   id: string;
   title: string;
+  parentId?: string;
   completed?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -357,6 +358,7 @@ const memoryAdapter = {
     const task: Task = {
       id: uid(),
       title: payload.title || "Untitled Task",
+      parentId: payload.parentId,
       completed: payload.completed || false,
       createdAt: now,
       updatedAt: now,
