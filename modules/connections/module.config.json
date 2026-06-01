@@ -1,0 +1,6 @@
+{
+  "name": "connections",
+  "description": "Connect with other users to assign tasks",
+  "enabled": true,
+  "minRank": 1
+}

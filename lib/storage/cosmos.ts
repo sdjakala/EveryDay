@@ -86,7 +86,9 @@ type Task = {
   createdAt?: string;
   updatedAt?: string;
   userId?: string; // Owner of the task
-  sharedWith?: string[]; // Array of userIds this task is shared with
+  sharedWith?: string[];
+  assignedTo?: string;
+  assignedBy?: string;
 };
 type UserTokens = {
   id: string; // userId (email)
@@ -194,21 +196,32 @@ type MaintenanceTopic = {
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
-  // Note: No userId or sharedWith here - these are inherited from parent Subject
 };
 
-// UPDATED: Subject now includes topics array
 type Subject = {
   id: string;
   name: string;
   type: SubjectType;
-  topics: MaintenanceTopic[];  // ← ADDED - topics are nested here!
+  topics: MaintenanceTopic[];
   currentMileage?: number;
   currentHours?: number;
   createdAt?: string;
   updatedAt?: string;
   userId?: string;
   sharedWith?: string[];
+};
+
+type Connection = {
+  id: string;
+  requesterId: string;
+  requesterName?: string;
+  recipientId: string;
+  recipientName?: string;
+  status: 'pending' | 'accepted' | 'declined';
+  permissions: ('assign-tasks' | 'view-tasks')[];
+  createdAt: string;
+  acceptedAt?: string;
+  declinedAt?: string;
 };
 
 const endpoint = process.env.COSMOS_ENDPOINT || "";
@@ -235,6 +248,8 @@ const weatherLocationsContainerId =
   process.env.COSMOS_CONTAINER_WEATHER_LOCATIONS || "WeatherLocations";
 const maintenanceSubjectsContainerId =
   process.env.COSMOS_CONTAINER_MAINTENANCE_SUBJECTS || "MaintenanceSubjects";
+const connectionsContainerId = 
+  process.env.COSMOS_CONTAINER_CONNECTIONS || "Connections";
 
 let client: CosmosClient | null = null;
 
@@ -657,6 +672,7 @@ const cosmosAdapter = {
   async createTask(payload: Partial<Task>, userId?: string): Promise<Task> {
     const client = getClient();
     const container = client.database(databaseId).container(tasksContainerId);
+    const now = new Date().toISOString();
 
     const newTask: Task = {
       id: uid(),
@@ -2211,6 +2227,166 @@ const cosmosAdapter = {
       if (e.code === 404) return null;
       throw e;
     }
+  },
+
+  async listConnections(userId?: string): Promise<Connection[]> {
+    const client = getClient();
+    const container = client.database(databaseId).container(connectionsContainerId);
+
+    if (!userId) {
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.createdAt DESC")
+        .fetchAll();
+      return resources as Connection[];
+    }
+
+    // Get connections where user is either requester or recipient
+    const query = {
+      query: `SELECT * FROM c WHERE c.requesterId = @userId OR c.recipientId = @userId ORDER BY c.createdAt DESC`,
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as Connection[];
+  },
+
+  async getConnection(id: string, userId?: string): Promise<Connection | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(connectionsContainerId);
+    try {
+      const { resource } = await container.item(id, id).read<Connection>();
+      if (!resource) return null;
+
+      // Check access: user must be either requester or recipient
+      if (
+        userId &&
+        resource.requesterId !== userId &&
+        resource.recipientId !== userId
+      ) {
+        return null;
+      }
+
+      return resource;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async createConnection(
+    payload: Partial<Connection>,
+    userId?: string
+  ): Promise<Connection> {
+    const client = getClient();
+    const container = client.database(databaseId).container(connectionsContainerId);
+    const now = new Date().toISOString();
+
+    const connection: Connection = {
+      id: uid(),
+      requesterId: userId || payload.requesterId!,
+      requesterName: payload.requesterName,
+      recipientId: payload.recipientId!,
+      recipientName: payload.recipientName,
+      status: 'pending',
+      permissions: payload.permissions || ['assign-tasks', 'view-tasks'],
+      createdAt: now,
+    };
+
+    const { resource } = await container.items.create(connection);
+    return resource as Connection;
+  },
+
+  async updateConnection(
+    id: string,
+    payload: Partial<Connection>,
+    userId?: string
+  ): Promise<Connection | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(connectionsContainerId);
+
+    try {
+      const { resource: existing } = await container.item(id, id).read<Connection>();
+      if (!existing) return null;
+
+      // Check access: user must be either requester or recipient
+      if (
+        userId &&
+        existing.requesterId !== userId &&
+        existing.recipientId !== userId
+      ) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      const updated: Connection = {
+        ...existing,
+        ...payload,
+        id: existing.id,
+        requesterId: existing.requesterId,
+        recipientId: existing.recipientId,
+      };
+
+      // Set timestamp based on status change
+      if (payload.status === 'accepted' && !existing.acceptedAt) {
+        updated.acceptedAt = now;
+      }
+      if (payload.status === 'declined' && !existing.declinedAt) {
+        updated.declinedAt = now;
+      }
+
+      const { resource } = await container.item(id, id).replace(updated);
+      return resource as Connection;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async deleteConnection(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client.database(databaseId).container(connectionsContainerId);
+
+    try {
+      const existing = await this.getConnection(id, userId);
+      if (!existing) return false;
+
+      // Check access: user must be either requester or recipient
+      if (
+        userId &&
+        existing.requesterId !== userId &&
+        existing.recipientId !== userId
+      ) {
+        return false;
+      }
+
+      await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
+  },
+
+  // Helper method to check if two users are connected
+  async areConnected(userId1: string, userId2: string): Promise<boolean> {
+    const connections = await this.listConnections(userId1);
+    return connections.some(
+      (c) =>
+        c.status === 'accepted' &&
+        ((c.requesterId === userId1 && c.recipientId === userId2) ||
+          (c.recipientId === userId1 && c.requesterId === userId2))
+    );
+  },
+
+  // Helper method to check if user can assign tasks to another user
+  async canAssignTask(fromUserId: string, toUserId: string): Promise<boolean> {
+    const connections = await this.listConnections(fromUserId);
+    return connections.some(
+      (c) =>
+        c.status === 'accepted' &&
+        c.permissions.includes('assign-tasks') &&
+        ((c.requesterId === fromUserId && c.recipientId === toUserId) ||
+          (c.recipientId === fromUserId && c.requesterId === toUserId))
+    );
   },
 
 };

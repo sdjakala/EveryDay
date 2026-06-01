@@ -8,6 +8,18 @@ export default async function handler(
   const storage = getStorageAdapter(req);
 
   try {
+    // GET - List all topics
+    if (req.method === "GET") {
+      const subjects = await storage.getSubjects();
+      const allTopics: any[] = [];
+      for (const subject of subjects) {
+        if (subject.topics) {
+          allTopics.push(...subject.topics);
+        }
+      }
+      return res.status(200).json(allTopics);
+    }
+
     // POST - Create a new topic within a subject OR complete maintenance
     if (req.method === "POST") {
       const { action, subjectId } = req.body;

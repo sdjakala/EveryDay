@@ -153,6 +153,18 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
       adapter.deleteTopic(subjectId, topicId, userId),
     completeTopicMaintenance: (subjectId: string, topicId: string, completionData: any) =>
       adapter.completeTopicMaintenance(subjectId, topicId, completionData, userId),
+
+    // ============= CONNECTIONS =============
+    listConnections: () => adapter.listConnections(userId),
+    getConnection: (id: string) => adapter.getConnection(id, userId),
+    createConnection: (payload: any) => adapter.createConnection(payload, userId),
+    updateConnection: (id: string, payload: any) => 
+      adapter.updateConnection(id, payload, userId),
+    deleteConnection: (id: string) => adapter.deleteConnection(id, userId),
+    areConnected: (userId1: string, userId2: string) =>
+      adapter.areConnected(userId1, userId2),
+    canAssignTask: (fromUserId: string, toUserId: string) =>
+      adapter.canAssignTask(fromUserId, toUserId),
   };
 }
 

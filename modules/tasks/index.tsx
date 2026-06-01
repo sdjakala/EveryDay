@@ -9,6 +9,23 @@ type Task = {
   subtasks?: Task[];
   createdAt?: string;
   updatedAt?: string;
+  assignedTo?: string;
+  assignedBy?: string;
+};
+
+type Connection = {
+  id: string;
+  requesterId: string;
+  requesterName?: string;
+  recipientId: string;
+  recipientName?: string;
+  status: "accepted";
+  permissions: string[];
+};
+
+type User = {
+  email: string;
+  name?: string;
 };
 
 function playCheckSound() {
@@ -16,7 +33,6 @@ function playCheckSound() {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const now = audioContext.currentTime;
     
-    // Create two oscillators for a rich thump sound
     const osc1 = audioContext.createOscillator();
     const osc2 = audioContext.createOscillator();
     const gain = audioContext.createGain();
@@ -25,17 +41,14 @@ function playCheckSound() {
     osc2.connect(gain);
     gain.connect(audioContext.destination);
     
-    // Lower frequency for a thump/knock sound
     osc1.type = 'sine';
     osc1.frequency.setValueAtTime(150, now);
     osc1.frequency.exponentialRampToValueAtTime(50, now + 0.05);
     
-    // Add a mid-range component for texture
     osc2.type = 'sine';
     osc2.frequency.setValueAtTime(280, now);
     osc2.frequency.exponentialRampToValueAtTime(80, now + 0.04);
     
-    // Quick attack and decay for a percussive thump
     gain.gain.setValueAtTime(0.2, now);
     gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
     
@@ -55,17 +68,52 @@ export default function TasksModule() {
   const [editText, setEditText] = useState("");
   const [loading, setLoading] = useState(true);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [assignTo, setAssignTo] = useState<string>("");
 
   useEffect(() => {
+    fetchCurrentUser();
+    fetchConnections();
     fetchTasks();
   }, []);
+
+  async function fetchCurrentUser() {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentUser({
+          email: data.payload.email,
+          name: data.payload.name,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to fetch current user:", e);
+    }
+  }
+
+  async function fetchConnections() {
+    try {
+      const res = await fetch("/api/connections");
+      if (res.ok) {
+        const data = await res.json();
+        const activeConnections = data.filter((c: Connection) => c.status === "accepted");
+        setConnections(activeConnections);
+      }
+    } catch (e) {
+      console.error("Failed to fetch connections:", e);
+    }
+  }
 
   async function fetchTasks() {
     try {
       const res = await fetch("/api/tasks");
       if (res.ok) {
         const data = await res.json();
-        const allTasks = data.tasks || [];
+        
+        // FIX: Handle both array response and object response
+        const allTasks = Array.isArray(data) ? data : (data.tasks || []);
         
         // Organize tasks into parent/subtask structure
         const parentTasks = allTasks.filter((t: Task) => !t.parentId);
@@ -102,12 +150,18 @@ export default function TasksModule() {
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, completed: false }),
+        body: JSON.stringify({ 
+          title, 
+          completed: false,
+          assignedTo: assignTo || undefined,
+          assignedBy: assignTo ? currentUser?.email : undefined,
+        }),
       });
       if (res.ok) {
         const created = await res.json();
         setTasks((s) => [created, ...s]);
         setText("");
+        setAssignTo("");
       }
     } catch (e) {
       console.error("Failed to create task:", e);
@@ -126,7 +180,6 @@ export default function TasksModule() {
       });
       if (res.ok) {
         const created = await res.json();
-        // Update the parent task's subtasks array
         setTasks((prevTasks) => prevTasks.map((t) => {
           if (t.id === parentId) {
             return {
@@ -144,7 +197,6 @@ export default function TasksModule() {
   }
 
   async function toggle(id: string, parentId?: string) {
-    // Find the task
     let task: Task | undefined;
     if (parentId) {
       const parent = tasks.find((t) => t.id === parentId);
@@ -166,7 +218,6 @@ export default function TasksModule() {
         const updated = await res.json();
         
         if (parentId) {
-          // Update subtask
           setTasks((s) => s.map((t) => {
             if (t.id === parentId) {
               return {
@@ -179,10 +230,8 @@ export default function TasksModule() {
             return t;
           }));
         } else {
-          // Update parent task (and cascade to subtasks if marking as complete)
           setTasks((s) => s.map((t) => {
             if (t.id === id) {
-              // If marking parent as complete, also mark all subtasks as complete
               if (updated.completed && t.subtasks && t.subtasks.length > 0) {
                 return {
                   ...updated,
@@ -207,7 +256,6 @@ export default function TasksModule() {
       });
       if (res.ok) {
         if (parentId) {
-          // Remove subtask
           setTasks((s) => s.map((t) => {
             if (t.id === parentId) {
               return {
@@ -218,7 +266,6 @@ export default function TasksModule() {
             return t;
           }));
         } else {
-          // Remove parent task
           setTasks((s) => s.filter((t) => t.id !== id));
         }
       }
@@ -252,7 +299,6 @@ export default function TasksModule() {
         const updated = await res.json();
         
         if (parentId) {
-          // Update subtask
           setTasks((s) => s.map((t) => {
             if (t.id === parentId) {
               return {
@@ -265,7 +311,6 @@ export default function TasksModule() {
             return t;
           }));
         } else {
-          // Update parent task
           setTasks((s) => s.map((t) => (t.id === id ? { ...t, ...updated } : t)));
         }
         
@@ -278,10 +323,22 @@ export default function TasksModule() {
   }
 
   function handleTaskClick(task: Task) {
-    // If there's text in the input, add it as a subtask
     if (text.trim()) {
       addSubtask(task.id);
     }
+  }
+
+  function getConnectedUserDisplay(email: string): string {
+    if (!email) return "";
+    const connection = connections.find(
+      (c) => c.requesterId === email || c.recipientId === email
+    );
+    if (connection) {
+      const isRequester = connection.requesterId === email;
+      const name = isRequester ? connection.requesterName : connection.recipientName;
+      return name || email;
+    }
+    return email;
   }
 
   if (loading) {
@@ -292,7 +349,6 @@ export default function TasksModule() {
     );
   }
 
-  // Filter to only show parent tasks (tasks without parentId)
   const parentTasks = tasks.filter((t) => !t.parentId);
   const visibleTasks = parentTasks.filter((t) =>
     showCompleted ? true : !t.completed
@@ -300,10 +356,11 @@ export default function TasksModule() {
 
   const completedCount = parentTasks.filter(t => t.completed).length;
 
-  // Helper to render a task item
   const renderTask = (t: Task, parentId?: string, isSubtask = false) => {
     const editKey = parentId ? `${parentId}-${t.id}` : t.id;
     const isEditing = editingId === editKey;
+    const isAssigned = t.assignedTo && t.assignedTo !== currentUser?.email;
+    const isAssignedToMe = t.assignedTo === currentUser?.email && t.assignedBy && t.assignedBy !== currentUser?.email;
 
     return (
       <div 
@@ -350,6 +407,26 @@ export default function TasksModule() {
             title={!isSubtask && text.trim() ? "Click to add subtask" : ""}
           >
             {t.title}
+            {isAssigned && (
+              <span style={{
+                marginLeft: "0.5rem",
+                fontSize: "0.75rem",
+                color: "var(--accent-start)",
+                fontWeight: 500,
+              }}>
+                → {getConnectedUserDisplay(t.assignedTo!)}
+              </span>
+            )}
+            {isAssignedToMe && t.assignedBy && (
+              <span style={{
+                marginLeft: "0.5rem",
+                fontSize: "0.75rem",
+                color: "var(--accent-start)",
+                fontWeight: 500,
+              }}>
+                ← {getConnectedUserDisplay(t.assignedBy)}
+              </span>
+            )}
           </div>
         )}
 
@@ -375,7 +452,6 @@ export default function TasksModule() {
 
   return (
     <div className="module-card">
-      {/* Create Task Form */}
       <form 
         onSubmit={addTask}
         style={{
@@ -391,6 +467,35 @@ export default function TasksModule() {
           onChange={(e) => setText(e.target.value)}
           style={{ flex: 1 }}
         />
+        
+        {connections.length > 0 && (
+          <select
+            value={assignTo}
+            onChange={(e) => setAssignTo(e.target.value)}
+            style={{
+              padding: "8px",
+              borderRadius: "8px",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              background: "var(--card)",
+              color: "#eef2f5",
+              fontSize: "0.9rem",
+            }}
+          >
+            <option value="">Assign to myself</option>
+            {connections.map((conn) => {
+              const isRequester = conn.requesterId === currentUser?.email;
+              const otherEmail = isRequester ? conn.recipientId : conn.requesterId;
+              const otherName = isRequester ? conn.recipientName : conn.requesterName;
+              
+              return (
+                <option key={conn.id} value={otherEmail}>
+                  {otherName || otherEmail}
+                </option>
+              );
+            })}
+          </select>
+        )}
+        
         <button type="submit" className="task-add-btn">
           <Icon name="plus" /> Add
         </button>
@@ -409,7 +514,6 @@ export default function TasksModule() {
         </div>
       )}      
 
-      {/* Filter Buttons */}
       <div style={{ 
         display: "flex", 
         gap: "0.5rem", 
@@ -445,7 +549,6 @@ export default function TasksModule() {
         )}
       </div>     
       
-      {/* Tasks List */}
       {visibleTasks.length === 0 ? (
         <div style={{ 
           textAlign: "center", 
@@ -462,7 +565,6 @@ export default function TasksModule() {
           {visibleTasks.map((t) => (
             <React.Fragment key={t.id}>
               {renderTask(t)}
-              {/* Render subtasks */}
               {t.subtasks && t.subtasks.length > 0 && (
                 <>
                   {t.subtasks

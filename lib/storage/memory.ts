@@ -27,6 +27,10 @@ type Task = {
   completed?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  userId?: string;
+  sharedWith?: string[];
+  assignedTo?: string;
+  assignedBy?: string;
 };
 type Workout = {
   id: string;
@@ -142,6 +146,19 @@ type MaintenanceTopic = {
   updatedAt?: string;
 };
 
+export type Connection = {
+  id: string;
+  requesterId: string;
+  requesterName?: string;
+  recipientId: string;
+  recipientName?: string;
+  status: 'pending' | 'accepted' | 'declined';
+  permissions: ('assign-tasks' | 'view-tasks')[];
+  createdAt: string;
+  acceptedAt?: string;
+  declinedAt?: string;
+};
+
 const DATA_DIR = path.join(process.cwd(), "data");
 const RECIPES_FILE = path.join(DATA_DIR, "backend_recipes.json");
 const GROCERY_FILE = path.join(DATA_DIR, "backend_grocery.json");
@@ -228,6 +245,8 @@ let weatherLocations: WeatherLocation[] = readJson<WeatherLocation[]>(
   []
 );
 let maintenanceSubjects: Subject[] = readJson<Subject[]>(MAINTENANCE_SUBJECTS_FILE, []);
+
+let connections: Connection[] = [];
 
 function persist() {
   if (!SHOULD_PERSIST) return;
@@ -362,6 +381,9 @@ const memoryAdapter = {
       completed: payload.completed || false,
       createdAt: now,
       updatedAt: now,
+      userId: _userId,
+      assignedTo: payload.assignedTo,
+      assignedBy: payload.assignedBy,
     };
     tasks = [task, ...tasks];
     persist();
@@ -975,6 +997,129 @@ const memoryAdapter = {
     subject.updatedAt = now;
     persist();
     return updated;
+  },
+
+  async listConnections(userId?: string): Promise<Connection[]> {
+    if (!userId) return [...connections];
+    
+    return connections.filter(
+      (c) => c.requesterId === userId || c.recipientId === userId
+    );
+  },
+
+  async getConnection(id: string, userId?: string): Promise<Connection | null> {
+    const connection = connections.find((c) => c.id === id);
+    if (!connection) return null;
+
+    // Check access: user must be either requester or recipient
+    if (
+      userId &&
+      connection.requesterId !== userId &&
+      connection.recipientId !== userId
+    ) {
+      return null;
+    }
+
+    return connection;
+  },
+
+  async createConnection(
+    payload: Partial<Connection>,
+    userId?: string
+  ): Promise<Connection> {
+    const now = new Date().toISOString();
+    const connection: Connection = {
+      id: uid(),
+      requesterId: userId || payload.requesterId!,
+      requesterName: payload.requesterName,
+      recipientId: payload.recipientId!,
+      recipientName: payload.recipientName,
+      status: 'pending',
+      permissions: payload.permissions || ['assign-tasks', 'view-tasks'],
+      createdAt: now,
+    };
+
+    connections.push(connection);
+    return connection;
+  },
+
+  async updateConnection(
+    id: string,
+    payload: Partial<Connection>,
+    userId?: string
+  ): Promise<Connection | null> {
+    const index = connections.findIndex((c) => c.id === id);
+    if (index === -1) return null;
+
+    const existing = connections[index];
+
+    // Check access
+    if (
+      userId &&
+      existing.requesterId !== userId &&
+      existing.recipientId !== userId
+    ) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const updated: Connection = {
+      ...existing,
+      ...payload,
+      id: existing.id,
+      requesterId: existing.requesterId,
+      recipientId: existing.recipientId,
+    };
+
+    // Set timestamp based on status change
+    if (payload.status === 'accepted' && !existing.acceptedAt) {
+      updated.acceptedAt = now;
+    }
+    if (payload.status === 'declined' && !existing.declinedAt) {
+      updated.declinedAt = now;
+    }
+
+    connections[index] = updated;
+    return updated;
+  },
+
+  async deleteConnection(id: string, userId?: string): Promise<boolean> {
+    const existing = await this.getConnection(id, userId);
+    if (!existing) return false;
+
+    // Check access
+    if (
+      userId &&
+      existing.requesterId !== userId &&
+      existing.recipientId !== userId
+    ) {
+      return false;
+    }
+
+    const index = connections.findIndex((c) => c.id === id);
+    if (index === -1) return false;
+
+    connections.splice(index, 1);
+    return true;
+  },
+
+  async areConnected(userId1: string, userId2: string): Promise<boolean> {
+    return connections.some(
+      (c) =>
+        c.status === 'accepted' &&
+        ((c.requesterId === userId1 && c.recipientId === userId2) ||
+          (c.recipientId === userId1 && c.requesterId === userId2))
+    );
+  },
+
+  async canAssignTask(fromUserId: string, toUserId: string): Promise<boolean> {
+    return connections.some(
+      (c) =>
+        c.status === 'accepted' &&
+        c.permissions.includes('assign-tasks') &&
+        ((c.requesterId === fromUserId && c.recipientId === toUserId) ||
+          (c.recipientId === fromUserId && c.requesterId === toUserId))
+    );
   },
 
 };

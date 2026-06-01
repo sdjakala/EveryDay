@@ -1,0 +1,6 @@
+{
+  "name": "ice-time",
+  "description": "Defenseman ice time tracking with shifts, goals, penalties, and shot-hand balance",
+  "enabled": true,
+  "minRank": 0
+}

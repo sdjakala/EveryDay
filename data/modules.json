@@ -66,6 +66,19 @@
     "description": "Track maintenance for vehicles, houses, boats, and equipment",
     "enabled": true,
     "minRank": 0
+  },
+  {
+    "name": "connections",
+    "title": "Connections",
+    "description": "Manage connections with friends and family, including shared tasks and subjects",
+    "enabled": true,
+    "minRank": 0
+  },
+  {
+    "name": "ice-time",
+    "title": "Ice Time",
+    "description": "Defenseman ice time tracking",
+    "enabled": true,
+    "minRank": 0
   }
-
 ]
