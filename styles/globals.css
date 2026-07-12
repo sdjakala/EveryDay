@@ -1369,3 +1369,59 @@ h1 {
   border-top: 1px solid rgba(255,255,255,0.08);
   margin: 10px 0;
 }
+
+/* TripMap popup */
+.trip-map-popup .maplibregl-popup-content {
+  background: rgba(10,14,20,0.92);
+  border: 1px solid rgba(37,244,238,0.25);
+  border-radius: 8px;
+  padding: 6px 10px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.trip-map-popup .maplibregl-popup-tip { display: none; }
+
+/* Click popup — styled close button */
+.trip-map-click-popup .maplibregl-popup-content {
+  padding: 8px 32px 8px 12px;
+}
+.trip-map-click-popup .maplibregl-popup-close-button {
+  color: rgba(200,210,220,0.7);
+  font-size: 16px;
+  line-height: 1;
+  top: 6px;
+  right: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.trip-map-click-popup .maplibregl-popup-close-button:hover { color: #eef2f5; }
+
+/* Weather forecast horizontal scroll */
+.trip-weather-scroll { scrollbar-width: thin; scrollbar-color: rgba(37,244,238,0.25) transparent; }
+.trip-weather-scroll::-webkit-scrollbar { height: 4px; }
+.trip-weather-scroll::-webkit-scrollbar-track { background: transparent; }
+.trip-weather-scroll::-webkit-scrollbar-thumb { background: rgba(37,244,238,0.25); border-radius: 2px; }
+.trip-weather-scroll::-webkit-scrollbar-thumb:hover { background: rgba(37,244,238,0.5); }
+
+/* TripMap — user location marker */
+@keyframes trip-user-loc-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(77,169,255,0.7); }
+  70%  { box-shadow: 0 0 0 14px rgba(77,169,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(77,169,255,0); }
+}
+.trip-user-loc-marker {
+  width: 16px;
+  height: 16px;
+  background: #4da9ff;
+  border: 3px solid rgba(255,255,255,0.95);
+  border-radius: 50%;
+  animation: trip-user-loc-pulse 2s ease-out infinite;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+/* TripMap — fullscreen control */
+.trip-map-fullscreen-wrapper:-webkit-full-screen { width: 100vw; height: 100vh; border-radius: 0 !important; }
+.trip-map-fullscreen-wrapper:-moz-full-screen    { width: 100vw; height: 100vh; border-radius: 0 !important; }
+.trip-map-fullscreen-wrapper:fullscreen          { width: 100vw; height: 100vh; border-radius: 0 !important; }

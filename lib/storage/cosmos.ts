@@ -238,6 +238,10 @@ type TripItem = {
   description?: string;
   links: TripLink[];
   confirmationCode?: string;
+  lat?: number;
+  lng?: number;
+  geocodedCity?: string;
+  geocodedCountry?: string;
 };
 type Trip = {
   id: string;
