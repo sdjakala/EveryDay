@@ -13,7 +13,7 @@ export type TripMarker = {
 type Props = {
   items: TripMarker[];
   highlightedId: string | null;
-  onMarkerClick?: (id: string) => void;
+  onMarkerClick?: (_id: string) => void;
   mapStyle?: string;
   focusIds?: string[] | null;
 };
@@ -252,7 +252,7 @@ export default function TripMap({
       map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
       try {
         if (map.getLayer(EXTRUSION_LAYER_ID)) map.removeLayer(EXTRUSION_LAYER_ID);
-      } catch (_) {}
+      } catch { /* layer may not exist */ }
     }
   }
 
