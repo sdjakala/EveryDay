@@ -224,6 +224,33 @@ type Connection = {
   declinedAt?: string;
 };
 
+type TripLink = { id: string; label: string; url: string };
+type TripItemType = "flight" | "hotel" | "activity" | "transport" | "restaurant" | "other";
+type TripItem = {
+  id: string;
+  type: TripItemType;
+  title: string;
+  date: string;
+  time?: string;
+  endDate?: string;
+  endTime?: string;
+  address?: string;
+  description?: string;
+  links: TripLink[];
+  confirmationCode?: string;
+};
+type Trip = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  description?: string;
+  items: TripItem[];
+  createdAt: string;
+  updatedAt: string;
+  userId?: string;
+};
+
 const endpoint = process.env.COSMOS_ENDPOINT || "";
 const key = process.env.COSMOS_KEY || "";
 const databaseId = process.env.COSMOS_DATABASE || "EveryDay";
@@ -248,8 +275,10 @@ const weatherLocationsContainerId =
   process.env.COSMOS_CONTAINER_WEATHER_LOCATIONS || "WeatherLocations";
 const maintenanceSubjectsContainerId =
   process.env.COSMOS_CONTAINER_MAINTENANCE_SUBJECTS || "MaintenanceSubjects";
-const connectionsContainerId = 
+const connectionsContainerId =
   process.env.COSMOS_CONTAINER_CONNECTIONS || "Connections";
+const tripsContainerId =
+  process.env.COSMOS_CONTAINER_TRIPS || "Trips";
 
 let client: CosmosClient | null = null;
 
@@ -2387,6 +2416,109 @@ const cosmosAdapter = {
         ((c.requesterId === fromUserId && c.recipientId === toUserId) ||
           (c.recipientId === fromUserId && c.requesterId === toUserId))
     );
+  },
+
+  // Trips
+  async listTrips(userId?: string): Promise<Trip[]> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tripsContainerId);
+
+    if (!userId) {
+      const { resources } = await container.items
+        .query("SELECT * FROM c ORDER BY c.startDate ASC")
+        .fetchAll();
+      return resources as Trip[];
+    }
+
+    const query = {
+      query: "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.startDate ASC",
+      parameters: [{ name: "@userId", value: userId }],
+    };
+    const { resources } = await container.items.query(query).fetchAll();
+    return resources as Trip[];
+  },
+
+  async getTrip(id: string, userId?: string): Promise<Trip | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tripsContainerId);
+    try {
+      const { resource } = await container.item(id, id).read<Trip>();
+      if (!resource) return null;
+
+      if (userId && resource.userId !== userId) {
+        return null;
+      }
+
+      return resource;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async createTrip(payload: Partial<Trip>, userId?: string): Promise<Trip> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tripsContainerId);
+    const now = new Date().toISOString();
+    const trip: Trip = {
+      id: uid(),
+      name: payload.name || "Untitled Trip",
+      startDate: payload.startDate || now.slice(0, 10),
+      endDate: payload.endDate || now.slice(0, 10),
+      description: payload.description,
+      items: payload.items || [],
+      createdAt: now,
+      updatedAt: now,
+      userId: userId || payload.userId,
+    };
+    const { resource } = await container.items.create(trip);
+    return resource as Trip;
+  },
+
+  async updateTrip(id: string, payload: Partial<Trip>, userId?: string): Promise<Trip | null> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tripsContainerId);
+    try {
+      const { resource: existing } = await container.item(id, id).read<Trip>();
+      if (!existing) return null;
+
+      if (userId && existing.userId !== userId) {
+        return null;
+      }
+
+      const updated: Trip = {
+        ...existing,
+        ...payload,
+        id: existing.id,
+        userId: existing.userId,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const { resource } = await container.item(id, id).replace(updated);
+      return resource as Trip;
+    } catch (e: any) {
+      if (e.code === 404) return null;
+      throw e;
+    }
+  },
+
+  async deleteTrip(id: string, userId?: string): Promise<boolean> {
+    const client = getClient();
+    const container = client.database(databaseId).container(tripsContainerId);
+    try {
+      const { resource: existing } = await container.item(id, id).read<Trip>();
+      if (!existing) return false;
+
+      if (userId && existing.userId !== userId) {
+        return false;
+      }
+
+      await container.item(id, id).delete();
+      return true;
+    } catch (e: any) {
+      if (e.code === 404) return false;
+      throw e;
+    }
   },
 
 };

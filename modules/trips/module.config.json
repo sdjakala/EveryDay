@@ -1,0 +1,7 @@
+{
+  "name": "trips",
+  "title": "Trip Planner",
+  "description": "Organize travel itineraries with routing and booking links",
+  "enabled": true,
+  "minRank": 0
+}

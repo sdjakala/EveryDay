@@ -80,5 +80,12 @@
     "description": "Defenseman ice time tracking",
     "enabled": true,
     "minRank": 0
+  },
+  {
+    "name": "trips",
+    "title": "Trip Planner",
+    "description": "Organize travel itineraries with routing and booking links",
+    "enabled": true,
+    "minRank": 0
   }
 ]

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import Icon from "../../components/Icon";
 
-type Task = { 
-  id: string; 
-  title: string; 
+type Task = {
+  id: string;
+  title: string;
   completed?: boolean;
   parentId?: string;
   subtasks?: Task[];
@@ -32,26 +32,26 @@ function playCheckSound() {
   try {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const now = audioContext.currentTime;
-    
+
     const osc1 = audioContext.createOscillator();
     const osc2 = audioContext.createOscillator();
     const gain = audioContext.createGain();
-    
+
     osc1.connect(gain);
     osc2.connect(gain);
     gain.connect(audioContext.destination);
-    
+
     osc1.type = 'sine';
     osc1.frequency.setValueAtTime(150, now);
     osc1.frequency.exponentialRampToValueAtTime(50, now + 0.05);
-    
+
     osc2.type = 'sine';
     osc2.frequency.setValueAtTime(280, now);
     osc2.frequency.exponentialRampToValueAtTime(80, now + 0.04);
-    
+
     gain.gain.setValueAtTime(0.2, now);
     gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
-    
+
     osc1.start(now);
     osc2.start(now);
     osc1.stop(now + 0.05);
@@ -71,12 +71,25 @@ export default function TasksModule() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [assignTo, setAssignTo] = useState<string>("");
+  const [collapsedTasks, setCollapsedTasks] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("taskCollapsedState");
+      if (raw) return new Set<string>(JSON.parse(raw));
+    } catch { /* ignore */ }
+    return new Set<string>();
+  });
 
   useEffect(() => {
     fetchCurrentUser();
     fetchConnections();
     fetchTasks();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("taskCollapsedState", JSON.stringify([...collapsedTasks]));
+    } catch { /* ignore */ }
+  }, [collapsedTasks]);
 
   async function fetchCurrentUser() {
     try {
@@ -111,10 +124,10 @@ export default function TasksModule() {
       const res = await fetch("/api/tasks");
       if (res.ok) {
         const data = await res.json();
-        
+
         // FIX: Handle both array response and object response
         const allTasks = Array.isArray(data) ? data : (data.tasks || []);
-        
+
         // Organize tasks into parent/subtask structure
         const parentTasks = allTasks.filter((t: Task) => !t.parentId);
         const subtasksByParent = allTasks
@@ -126,13 +139,13 @@ export default function TasksModule() {
             acc[task.parentId!].push(task);
             return acc;
           }, {});
-        
+
         // Attach subtasks to their parents
         const organizedTasks = parentTasks.map((parent: Task) => ({
           ...parent,
           subtasks: subtasksByParent[parent.id] || [],
         }));
-        
+
         setTasks(organizedTasks);
       }
     } catch (e) {
@@ -150,8 +163,8 @@ export default function TasksModule() {
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          title, 
+        body: JSON.stringify({
+          title,
           completed: false,
           assignedTo: assignTo || undefined,
           assignedBy: assignTo ? currentUser?.email : undefined,
@@ -171,7 +184,7 @@ export default function TasksModule() {
   async function addSubtask(parentId: string) {
     const title = text.trim();
     if (!title) return;
-    
+
     try {
       const res = await fetch("/api/tasks", {
         method: "POST",
@@ -189,6 +202,12 @@ export default function TasksModule() {
           }
           return t;
         }));
+        // Expand the parent so the new subtask is visible
+        setCollapsedTasks((prev) => {
+          const next = new Set(prev);
+          next.delete(parentId);
+          return next;
+        });
         setText("");
       }
     } catch (e) {
@@ -204,10 +223,10 @@ export default function TasksModule() {
     } else {
       task = tasks.find((t) => t.id === id);
     }
-    
+
     if (!task) return;
     playCheckSound();
-    
+
     try {
       const res = await fetch(`/api/tasks/${id}`, {
         method: "PATCH",
@@ -216,7 +235,7 @@ export default function TasksModule() {
       });
       if (res.ok) {
         const updated = await res.json();
-        
+
         if (parentId) {
           setTasks((s) => s.map((t) => {
             if (t.id === parentId) {
@@ -297,7 +316,7 @@ export default function TasksModule() {
       });
       if (res.ok) {
         const updated = await res.json();
-        
+
         if (parentId) {
           setTasks((s) => s.map((t) => {
             if (t.id === parentId) {
@@ -313,13 +332,22 @@ export default function TasksModule() {
         } else {
           setTasks((s) => s.map((t) => (t.id === id ? { ...t, ...updated } : t)));
         }
-        
+
         setEditingId(null);
         setEditText("");
       }
     } catch (e) {
       console.error("Failed to update task:", e);
     }
+  }
+
+  function toggleCollapse(id: string) {
+    setCollapsedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function handleTaskClick(task: Task) {
@@ -356,18 +384,54 @@ export default function TasksModule() {
 
   const completedCount = parentTasks.filter(t => t.completed).length;
 
-  const renderTask = (t: Task, parentId?: string, isSubtask = false) => {
+  const renderTask = (
+    t: Task,
+    parentId?: string,
+    isSubtask = false,
+    isCollapsed = false,
+    onToggleCollapse?: () => void,
+  ) => {
     const editKey = parentId ? `${parentId}-${t.id}` : t.id;
     const isEditing = editingId === editKey;
     const isAssigned = t.assignedTo && t.assignedTo !== currentUser?.email;
     const isAssignedToMe = t.assignedTo === currentUser?.email && t.assignedBy && t.assignedBy !== currentUser?.email;
+    const hasSubtasks = !isSubtask && (t.subtasks?.length ?? 0) > 0;
+    const subtaskCount = t.subtasks?.length ?? 0;
+    const completedSubtaskCount = t.subtasks?.filter((st) => st.completed).length ?? 0;
 
     return (
-      <div 
-        className={`task-item ${isSubtask ? 'subtask' : ''}`} 
+      <div
+        className={`task-item ${isSubtask ? 'subtask' : ''}`}
         key={t.id}
         style={isSubtask ? { marginLeft: '2rem' } : {}}
       >
+        {/* Collapse chevron — only rendered for parent tasks, invisible when no subtasks */}
+        {!isSubtask && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-label={isCollapsed ? "Expand subtasks" : "Collapse subtasks"}
+            tabIndex={hasSubtasks ? 0 : -1}
+            style={{
+              background: "transparent",
+              border: 0,
+              padding: "0 2px",
+              width: 20,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              visibility: hasSubtasks ? "visible" : "hidden",
+              cursor: hasSubtasks ? "pointer" : "default",
+              color: "var(--muted)",
+              fontSize: 10,
+              transition: "color 0.15s",
+            }}
+          >
+            {isCollapsed ? "▶" : "▼"}
+          </button>
+        )}
+
         <button
           type="button"
           className="task-checkbox"
@@ -396,20 +460,39 @@ export default function TasksModule() {
           <div
             className={`task-title ${t.completed ? "completed" : ""}`}
             onClick={() => !isSubtask && text.trim() ? handleTaskClick(t) : toggle(t.id, parentId)}
-            style={{ 
-              cursor: "pointer", 
+            style={{
+              cursor: "pointer",
               flex: 1,
               background: !isSubtask && text.trim() ? "rgba(37, 244, 238, 0.1)" : "transparent",
               borderRadius: !isSubtask && text.trim() ? "4px" : "0",
               padding: !isSubtask && text.trim() ? "4px 8px" : "0",
-              transition: "all 0.2s"
+              transition: "all 0.2s",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              flexWrap: "wrap",
             }}
             title={!isSubtask && text.trim() ? "Click to add subtask" : ""}
           >
-            {t.title}
+            <span>{t.title}</span>
+
+            {/* Collapsed subtask count badge */}
+            {isCollapsed && hasSubtasks && (
+              <span style={{
+                fontSize: "0.72rem",
+                padding: "1px 6px",
+                borderRadius: 10,
+                background: "rgba(255,255,255,0.08)",
+                color: "var(--muted)",
+                fontWeight: 500,
+                whiteSpace: "nowrap",
+              }}>
+                {completedSubtaskCount}/{subtaskCount}
+              </span>
+            )}
+
             {isAssigned && (
               <span style={{
-                marginLeft: "0.5rem",
                 fontSize: "0.75rem",
                 color: "var(--accent-start)",
                 fontWeight: 500,
@@ -419,7 +502,6 @@ export default function TasksModule() {
             )}
             {isAssignedToMe && t.assignedBy && (
               <span style={{
-                marginLeft: "0.5rem",
                 fontSize: "0.75rem",
                 color: "var(--accent-start)",
                 fontWeight: 500,
@@ -438,8 +520,8 @@ export default function TasksModule() {
           >
             <Icon name="edit" />
           </button>
-          <button 
-            className="task-action-btn" 
+          <button
+            className="task-action-btn"
             onClick={() => remove(t.id, parentId)}
             title="Delete"
           >
@@ -452,7 +534,7 @@ export default function TasksModule() {
 
   return (
     <div className="module-card">
-      <form 
+      <form
         onSubmit={addTask}
         style={{
           display: "flex",
@@ -467,7 +549,7 @@ export default function TasksModule() {
           onChange={(e) => setText(e.target.value)}
           style={{ flex: 1 }}
         />
-        
+
         {connections.length > 0 && (
           <select
             value={assignTo}
@@ -486,7 +568,7 @@ export default function TasksModule() {
               const isRequester = conn.requesterId === currentUser?.email;
               const otherEmail = isRequester ? conn.recipientId : conn.requesterId;
               const otherName = isRequester ? conn.recipientName : conn.requesterName;
-              
+
               return (
                 <option key={conn.id} value={otherEmail}>
                   {otherName || otherEmail}
@@ -495,7 +577,7 @@ export default function TasksModule() {
             })}
           </select>
         )}
-        
+
         <button type="submit" className="task-add-btn">
           <Icon name="plus" /> Add
         </button>
@@ -510,13 +592,13 @@ export default function TasksModule() {
           fontSize: "0.85rem",
           color: "var(--muted)"
         }}>
-          💡 Tip: Click a task below to add "{text}" as a subtask, or click Add to create a parent task
+          💡 Tip: Click a task below to add &quot;{text}&quot; as a subtask, or click Add to create a parent task
         </div>
-      )}      
+      )}
 
-      <div style={{ 
-        display: "flex", 
-        gap: "0.5rem", 
+      <div style={{
+        display: "flex",
+        gap: "0.5rem",
         marginBottom: "1rem",
         flexWrap: "wrap"
       }}>
@@ -533,7 +615,7 @@ export default function TasksModule() {
             {showCompleted ? "Completed" : "Show completed"}
           </span>
         </button>
-        
+
         {showCompleted && completedCount > 0 && (
           <button
             className="toggle-btn"
@@ -547,36 +629,39 @@ export default function TasksModule() {
             <span style={{ fontSize: 13 }}>Clear completed</span>
           </button>
         )}
-      </div>     
-      
+      </div>
+
       {visibleTasks.length === 0 ? (
-        <div style={{ 
-          textAlign: "center", 
+        <div style={{
+          textAlign: "center",
           padding: "2rem 1rem",
           color: "var(--muted)",
           fontSize: "0.9rem"
         }}>
-          {showCompleted 
-            ? "No completed tasks yet" 
+          {showCompleted
+            ? "No completed tasks yet"
             : "No active tasks. Create one above!"}
         </div>
       ) : (
         <div className="tasks-list">
-          {visibleTasks.map((t) => (
-            <React.Fragment key={t.id}>
-              {renderTask(t)}
-              {t.subtasks && t.subtasks.length > 0 && (
-                <>
-                  {t.subtasks
-                    .filter((st) => showCompleted ? true : !st.completed)
-                    .map((st) => renderTask(st, t.id, true))}
-                </>
-              )}
-            </React.Fragment>
-          ))}
+          {visibleTasks.map((t) => {
+            const isCollapsed = collapsedTasks.has(t.id);
+            return (
+              <React.Fragment key={t.id}>
+                {renderTask(t, undefined, false, isCollapsed, () => toggleCollapse(t.id))}
+                {!isCollapsed && t.subtasks && t.subtasks.length > 0 && (
+                  <>
+                    {t.subtasks
+                      .filter((st) => showCompleted ? true : !st.completed)
+                      .map((st) => renderTask(st, t.id, true))}
+                  </>
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
       )}
-      
+
       <div style={{ marginBottom: "1rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
           <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>

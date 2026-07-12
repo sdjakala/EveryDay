@@ -19,6 +19,7 @@ async function fetchModules() {
 
 export default function Dashboard() {
   const [modules, setModules] = useState<ModuleMeta[]>([]);
+  const [hiddenModules, setHiddenModules] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [pinned, setPinned] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export default function Dashboard() {
         setUser(null);
       });
 
-    // fetch modules then apply saved order (if any)
+    // fetch modules then apply saved order and hidden list (if any)
     fetchModules()
       .then((data: ModuleMeta[]) => {
         try {
@@ -61,12 +62,20 @@ export default function Dashboard() {
               .filter(Boolean) as ModuleMeta[];
             const remaining = data.filter((d) => !order.includes(d.name));
             setModules([...ordered, ...remaining]);
-            return;
+          } else {
+            setModules(data);
           }
         } catch (e) {
           console.warn("Failed to parse module order", e);
+          setModules(data);
         }
-        setModules(data);
+
+        try {
+          const rawHidden = localStorage.getItem("hiddenModules");
+          if (rawHidden) setHiddenModules(JSON.parse(rawHidden));
+        } catch {
+          /* ignore */
+        }
       })
       .catch(console.error);
 
@@ -205,7 +214,8 @@ export default function Dashboard() {
             .filter((m) => m.name === pinned)
             .map((mod) => {
               if (!mod || !mod.enabled) return null;
-              
+              if (hiddenModules.includes(mod.name)) return null;
+
               // Check if module is allowed for unauthenticated users
               if (!isAuthenticated && !allowedForGuests.includes(mod.name)) {
                 return null;
@@ -257,7 +267,8 @@ export default function Dashboard() {
             })
         : modules.map((mod) => {
             if (!mod.enabled) return null;
-            
+            if (hiddenModules.includes(mod.name)) return null;
+
             // Check if module is allowed for unauthenticated users
             if (!isAuthenticated && !allowedForGuests.includes(mod.name)) {
               return null;

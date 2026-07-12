@@ -159,6 +159,32 @@ export type Connection = {
   declinedAt?: string;
 };
 
+type TripLink = { id: string; label: string; url: string };
+type TripItemType = "flight" | "hotel" | "activity" | "transport" | "restaurant" | "other";
+type TripItem = {
+  id: string;
+  type: TripItemType;
+  title: string;
+  date: string;
+  time?: string;
+  endDate?: string;
+  endTime?: string;
+  address?: string;
+  description?: string;
+  links: TripLink[];
+  confirmationCode?: string;
+};
+type Trip = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  description?: string;
+  items: TripItem[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 const DATA_DIR = path.join(process.cwd(), "data");
 const RECIPES_FILE = path.join(DATA_DIR, "backend_recipes.json");
 const GROCERY_FILE = path.join(DATA_DIR, "backend_grocery.json");
@@ -181,6 +207,7 @@ const WEATHER_LOCATIONS_FILE = path.join(
   "backend_weather_locations.json"
 );
 const MAINTENANCE_SUBJECTS_FILE = path.join(DATA_DIR, "backend_maintenance_subjects.json");
+const TRIPS_FILE = path.join(DATA_DIR, "backend_trips.json");
 
 function ensureDataDir() {
   try {
@@ -245,6 +272,7 @@ let weatherLocations: WeatherLocation[] = readJson<WeatherLocation[]>(
   []
 );
 let maintenanceSubjects: Subject[] = readJson<Subject[]>(MAINTENANCE_SUBJECTS_FILE, []);
+let trips: Trip[] = readJson<Trip[]>(TRIPS_FILE, []);
 
 let connections: Connection[] = [];
 
@@ -258,6 +286,7 @@ function persist() {
   writeJson(NEWS_CACHE_FILE, newsArticlesCache);
   writeJson(WORKOUT_RESULTS_FILE, workoutResults);
   writeJson(MAINTENANCE_SUBJECTS_FILE, maintenanceSubjects);
+  writeJson(TRIPS_FILE, trips);
 }
 
 const memoryAdapter = {
@@ -997,6 +1026,48 @@ const memoryAdapter = {
     subject.updatedAt = now;
     persist();
     return updated;
+  },
+
+  // Trips
+  async listTrips(_userId?: string): Promise<Trip[]> {
+    return trips;
+  },
+
+  async getTrip(id: string, _userId?: string): Promise<Trip | null> {
+    return trips.find((t) => t.id === id) || null;
+  },
+
+  async createTrip(payload: Partial<Trip>, _userId?: string): Promise<Trip> {
+    const now = new Date().toISOString();
+    const trip: Trip = {
+      id: uid(),
+      name: payload.name || "Untitled Trip",
+      startDate: payload.startDate || "",
+      endDate: payload.endDate || "",
+      description: payload.description,
+      items: payload.items || [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    trips = [trip, ...trips];
+    persist();
+    return trip;
+  },
+
+  async updateTrip(id: string, payload: Partial<Trip>, _userId?: string): Promise<Trip | null> {
+    const now = new Date().toISOString();
+    trips = trips.map((t) =>
+      t.id === id ? { ...t, ...payload, id, updatedAt: now } : t
+    );
+    persist();
+    return trips.find((t) => t.id === id) || null;
+  },
+
+  async deleteTrip(id: string, _userId?: string): Promise<boolean> {
+    const prev = trips.length;
+    trips = trips.filter((t) => t.id !== id);
+    persist();
+    return prev !== trips.length;
   },
 
   async listConnections(userId?: string): Promise<Connection[]> {

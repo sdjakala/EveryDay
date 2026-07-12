@@ -154,6 +154,13 @@ function wrapAdapterWithUserId(adapter: any, userId?: string) {
     completeTopicMaintenance: (subjectId: string, topicId: string, completionData: any) =>
       adapter.completeTopicMaintenance(subjectId, topicId, completionData, userId),
 
+    // ============= TRIPS =============
+    listTrips: () => adapter.listTrips(userId),
+    getTrip: (id: string) => adapter.getTrip(id, userId),
+    createTrip: (payload: any) => adapter.createTrip(payload, userId),
+    updateTrip: (id: string, payload: any) => adapter.updateTrip(id, payload, userId),
+    deleteTrip: (id: string) => adapter.deleteTrip(id, userId),
+
     // ============= CONNECTIONS =============
     listConnections: () => adapter.listConnections(userId),
     getConnection: (id: string) => adapter.getConnection(id, userId),

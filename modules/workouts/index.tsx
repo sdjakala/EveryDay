@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import Modal from "../../components/Modal";
 import Icon from "../../components/Icon";
@@ -137,6 +137,9 @@ export default function WorkoutsModule() {
     secondsLeft: number;
   } | null>(null);
   const [liftHistoryData, setLiftHistoryData] = useState<Record<string, number[]>>({});
+  const [draggingLiftId, setDraggingLiftId] = useState<string | null>(null);
+  const [dragOverLiftId, setDragOverLiftId] = useState<string | null>(null);
+  const draggingWorkoutIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     fetchWorkouts();
@@ -527,6 +530,50 @@ export default function WorkoutsModule() {
     await persistWorkout(updated);
   }
 
+  function handleLiftDragStart(workoutId: string, liftId: string) {
+    setDraggingLiftId(liftId);
+    draggingWorkoutIdRef.current = workoutId;
+    try { document.body.style.touchAction = "none"; } catch {}
+  }
+
+  function handleLiftDragMove(e: React.PointerEvent) {
+    if (!draggingLiftId) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    const card = el?.closest("[data-liftid]") as HTMLElement | null;
+    const liftId = card?.dataset.liftid ?? null;
+    if (liftId && liftId !== draggingLiftId && liftId !== dragOverLiftId) {
+      setDragOverLiftId(liftId);
+    }
+  }
+
+  function handleLiftDragEnd() {
+    const wId = draggingWorkoutIdRef.current;
+    const srcId = draggingLiftId;
+    const tgtId = dragOverLiftId;
+
+    if (wId && srcId && tgtId && srcId !== tgtId) {
+      const workout = workouts.find((w) => w.id === wId);
+      if (workout) {
+        const srcIdx = workout.lifts.findIndex((l) => l.id === srcId);
+        const tgtIdx = workout.lifts.findIndex((l) => l.id === tgtId);
+        if (srcIdx !== -1 && tgtIdx !== -1) {
+          const newLifts = [...workout.lifts];
+          const [moved] = newLifts.splice(srcIdx, 1);
+          newLifts.splice(tgtIdx, 0, moved);
+          setWorkouts((prev) =>
+            prev.map((w) => (w.id === wId ? { ...w, lifts: newLifts } : w))
+          );
+          persistWorkout({ ...workout, lifts: newLifts });
+        }
+      }
+    }
+
+    setDraggingLiftId(null);
+    setDragOverLiftId(null);
+    draggingWorkoutIdRef.current = null;
+    try { document.body.style.touchAction = ""; } catch {}
+  }
+
   function isWorkoutComplete(workout: Workout): boolean {
     if (workout.lifts.length === 0) return false;
     
@@ -781,13 +828,49 @@ export default function WorkoutsModule() {
 
                   {/* Lifts List */}
                   {w.lifts.length > 0 && (
-                    <div style={{ marginTop: 12 }}>
+                    <div
+                      style={{ marginTop: 12 }}
+                      onPointerMove={editingWorkoutId === w.id ? handleLiftDragMove : undefined}
+                      onPointerUp={editingWorkoutId === w.id ? handleLiftDragEnd : undefined}
+                      onPointerCancel={editingWorkoutId === w.id ? handleLiftDragEnd : undefined}
+                    >
                       {w.lifts.map((lift) => (
-                        <div key={lift.id} className="lift-card">
+                        <div
+                          key={lift.id}
+                          className="lift-card"
+                          data-liftid={lift.id}
+                          style={{
+                            opacity: draggingLiftId === lift.id ? 0.4 : 1,
+                            border: dragOverLiftId === lift.id && draggingLiftId !== lift.id
+                              ? "1px dashed var(--accent-start)"
+                              : undefined,
+                            transition: "opacity 0.15s, border 0.1s",
+                          }}
+                        >
                           <div
                             className="lift-card-header"
                             onClick={() => setExpandedLiftId(expandedLiftId === lift.id ? null : lift.id)}
                           >
+                            {editingWorkoutId === w.id && (
+                              <div
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  handleLiftDragStart(w.id, lift.id);
+                                }}
+                                style={{
+                                  cursor: "grab",
+                                  color: "var(--muted)",
+                                  fontSize: 18,
+                                  padding: "0 8px 0 0",
+                                  userSelect: "none",
+                                  touchAction: "none",
+                                  flexShrink: 0,
+                                }}
+                                title="Drag to reorder"
+                              >
+                                ⠿
+                              </div>
+                            )}
                             <div style={{ flex: 1 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <div style={{ fontWeight: 600, fontSize: 14 }}>{lift.name}</div>
@@ -814,40 +897,16 @@ export default function WorkoutsModule() {
                             </div>
                             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                               {editingWorkoutId === w.id && (
-                                <>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveLiftUp(w.id, lift.id);
-                                    }}
-                                    disabled={w.lifts.indexOf(lift) === 0}
-                                    className="workout-action-btn"
-                                    title="Move Up"
-                                  >
-                                    ↑
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveLiftDown(w.id, lift.id);
-                                    }}
-                                    disabled={w.lifts.indexOf(lift) === w.lifts.length - 1}
-                                    className="workout-action-btn"
-                                    title="Move Down"
-                                  >
-                                    ↓
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      deleteLift(w.id, lift.id);
-                                    }}
-                                    className="workout-action-btn danger"
-                                    title="Delete lift"
-                                  >
-                                    ×
-                                  </button>
-                                </>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteLift(w.id, lift.id);
+                                  }}
+                                  className="workout-action-btn danger"
+                                  title="Delete lift"
+                                >
+                                  ×
+                                </button>
                               )}
                               {!editingWorkoutId && (
                                 <button
