@@ -5,7 +5,7 @@ import Modal from "../../components/Modal";
 import Icon from "../../components/Icon";
 import {
   Plane, BedDouble, Target, Bus, Utensils, MapPin,
-  Car, Footprints, Bike, Link as LinkIcon, Navigation, ChevronDown, ZoomIn,
+  Car, Footprints, Bike, Link as LinkIcon, Navigation, ChevronDown, ZoomIn, Expand, X,
   type LucideProps,
 } from "lucide-react";
 
@@ -231,6 +231,7 @@ export default function TripPlannerModule() {
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
   const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].url);
   const [focusDate, setFocusDate] = useState<string | null>(null);
+  const [focusCity, setFocusCity] = useState<string | null>(null);
 
   const [tripModal, setTripModal] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
@@ -238,10 +239,7 @@ export default function TripPlannerModule() {
 
   const [itemModal, setItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState<TripItem | null>(null);
-  const [itemForm, setItemForm] = useState(defaultItemForm);
-  const [newLinkLabel, setNewLinkLabel] = useState("");
-  const [newLinkUrl, setNewLinkUrl] = useState("");
-  const [geocoding, setGeocoding] = useState(false);
+  const [detailItem, setDetailItem] = useState<TripItem | null>(null);
 
   const [cityWeather, setCityWeather] = useState<CityWeather[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -369,68 +367,20 @@ export default function TripPlannerModule() {
 
   function openItemModal(item?: TripItem) {
     setEditingItem(item || null);
-    setItemForm(item
-      ? { type: item.type, title: item.title, date: item.date, time: item.time || "",
-          endDate: item.endDate || "", endTime: item.endTime || "", address: item.address || "",
-          description: item.description || "", confirmationCode: item.confirmationCode || "",
-          links: item.links || [] }
-      : defaultItemForm
-    );
-    setNewLinkLabel("");
-    setNewLinkUrl("");
     setItemModal(true);
   }
 
-  async function saveItem() {
+  function handleSaveItem(itemData: TripItem) {
     const trip = trips.find((t) => t.id === selectedId);
-    if (!trip || !itemForm.title.trim()) return;
-
-    let geoData: { lat?: number; lng?: number; geocodedCity?: string; geocodedCountry?: string } = {};
-
-    // Geocode if address changed, is new, or exists but has no coordinates yet
-    const addressChanged = itemForm.address.trim() !== (editingItem?.address || "").trim();
-    const missingCoords = itemForm.address.trim() && editingItem?.lat == null;
-    if (itemForm.address.trim() && (addressChanged || missingCoords)) {
-      setGeocoding(true);
-      try {
-        const res = await fetch("/api/trips/geocode", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address: itemForm.address.trim() }),
-        });
-        if (res.ok) {
-          const geo = await res.json();
-          geoData = { lat: geo.lat, lng: geo.lng, geocodedCity: geo.city, geocodedCountry: geo.country };
-        }
-      } catch (e) {
-        console.error("Geocoding failed", e);
-      } finally {
-        setGeocoding(false);
-      }
-    } else if (!itemForm.address.trim()) {
-      // Address was cleared — remove geocode data
-      geoData = { lat: undefined, lng: undefined, geocodedCity: undefined, geocodedCountry: undefined };
-    } else if (editingItem) {
-      // Address unchanged — preserve existing geocode
-      geoData = { lat: editingItem.lat, lng: editingItem.lng, geocodedCity: editingItem.geocodedCity, geocodedCountry: editingItem.geocodedCountry };
-    }
-
-    const itemData: TripItem = {
-      id: editingItem?.id || uid(),
-      ...itemForm,
-      ...geoData,
-      title: itemForm.title.trim(),
-    };
-
+    if (!trip) return;
     const updatedItems = editingItem
       ? trip.items.map((i) => i.id === itemData.id ? itemData : i)
       : [...trip.items, itemData];
-
     const updatedTrip = { ...trip, items: updatedItems };
     setTrips((prev) => prev.map((t) => t.id === trip.id ? updatedTrip : t));
-    setWeatherFetchedFor(null); // invalidate weather cache
+    setWeatherFetchedFor(null);
     setItemModal(false);
-    await persistTrip(updatedTrip);
+    persistTrip(updatedTrip);
   }
 
   async function deleteItem(itemId: string) {
@@ -440,18 +390,6 @@ export default function TripPlannerModule() {
     setTrips((prev) => prev.map((t) => t.id === trip.id ? updatedTrip : t));
     setWeatherFetchedFor(null);
     await persistTrip(updatedTrip);
-  }
-
-  function addLink() {
-    if (!newLinkUrl.trim()) return;
-    const link: TripLink = { id: uid(), label: newLinkLabel.trim(), url: newLinkUrl.trim() };
-    setItemForm((f) => ({ ...f, links: [...f.links, link] }));
-    setNewLinkLabel("");
-    setNewLinkUrl("");
-  }
-
-  function removeLink(linkId: string) {
-    setItemForm((f) => ({ ...f, links: f.links.filter((l) => l.id !== linkId) }));
   }
 
   function toggleExpand(id: string) {
@@ -481,6 +419,8 @@ export default function TripPlannerModule() {
     setWeatherFetchedFor(null);
     setCityWeather([]);
     setHighlightedItemId(null);
+    setFocusDate(null);
+    setFocusCity(null);
   }
 
   if (loading) return <div style={{ color: "var(--muted)", padding: 12 }}>Loading trips…</div>;
@@ -492,17 +432,40 @@ export default function TripPlannerModule() {
     id: i.id, lat: i.lat!, lng: i.lng!, title: i.title, type: i.type,
   }));
 
+  // Unique cities that have geocoded items (for the city filter pills)
+  const uniqueMapCities = Array.from(
+    sorted
+      .filter((i) => i.geocodedCity)
+      .reduce<Map<string, { city: string; count: number }>>((acc, i) => {
+        const key = i.geocodedCity!.toLowerCase();
+        const existing = acc.get(key);
+        if (existing) existing.count++;
+        else acc.set(key, { city: i.geocodedCity!, count: 1 });
+        return acc;
+      }, new Map())
+      .values()
+  );
+
+  // Items visible in the map tab list (filtered by active city)
+  const mapTabItems = focusCity
+    ? sorted.filter((i) => i.geocodedCity?.toLowerCase() === focusCity.toLowerCase())
+    : sorted;
+
   // Date-grouped items for map tab list
-  const itemsByDate = sorted.reduce<Map<string, TripItem[]>>((acc, item) => {
+  const itemsByDate = mapTabItems.reduce<Map<string, TripItem[]>>((acc, item) => {
     const key = item.date || "";
     if (!acc.has(key)) acc.set(key, []);
     acc.get(key)!.push(item);
     return acc;
   }, new Map());
 
-  // IDs of geocoded items on the focused day (null = no focus = fit all)
-  const focusIds = focusDate
-    ? sorted.filter((i) => i.date === focusDate && i.lat != null).map((i) => i.id)
+  // IDs of geocoded items matching active city + day filters (null = no filter = fit all)
+  const focusIds = (focusDate || focusCity)
+    ? sorted.filter((i) => {
+        const dateMatch = !focusDate || i.date === focusDate;
+        const cityMatch = !focusCity || i.geocodedCity?.toLowerCase() === focusCity.toLowerCase();
+        return i.lat != null && dateMatch && cityMatch;
+      }).map((i) => i.id)
     : null;
 
   return (
@@ -601,6 +564,7 @@ export default function TripPlannerModule() {
                             onToggle={() => handleItemClick(item)}
                             onEdit={() => openItemModal(item)}
                             onDelete={() => deleteItem(item.id)}
+                            onFullscreen={() => setDetailItem(item)}
                           />
                         ))}
                       </div>
@@ -648,6 +612,41 @@ export default function TripPlannerModule() {
               )}
 
               <ModeToggle mode={mode} setMode={setMode} compact />
+
+              {/* City filter pills — only shown when trip spans multiple cities */}
+              {uniqueMapCities.length > 1 && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8, marginTop: 4 }}>
+                  <button
+                    onClick={() => { setFocusCity(null); setFocusDate(null); }}
+                    style={{
+                      padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                      background: !focusCity ? "linear-gradient(90deg,var(--accent-start),var(--accent-end))" : "rgba(255,255,255,0.05)",
+                      border: "1px solid " + (!focusCity ? "transparent" : "rgba(255,255,255,0.1)"),
+                      color: !focusCity ? "#071018" : "var(--muted)",
+                    }}
+                  >
+                    All
+                  </button>
+                  {uniqueMapCities.map(({ city, count }) => {
+                    const active = focusCity?.toLowerCase() === city.toLowerCase();
+                    return (
+                      <button
+                        key={city}
+                        onClick={() => { setFocusCity(active ? null : city); setFocusDate(null); }}
+                        style={{
+                          padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                          background: active ? "linear-gradient(90deg,var(--accent-start),var(--accent-end))" : "rgba(255,255,255,0.05)",
+                          border: "1px solid " + (active ? "transparent" : "rgba(255,255,255,0.1)"),
+                          color: active ? "#071018" : "var(--muted)",
+                        }}
+                      >
+                        {city}
+                        <span style={{ opacity: 0.65, marginLeft: 4 }}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, paddingRight: 2 }}>
                 {Array.from(itemsByDate.entries()).map(([date, dateItems]) => {
@@ -806,132 +805,223 @@ export default function TripPlannerModule() {
       </Modal>
 
       {/* ── Item Modal ─────────────────────────────────────────────────────── */}
-      <Modal open={itemModal} onClose={() => setItemModal(false)}>
-        <div style={{ padding: 4 }}>
-          <h3 style={{ margin: "0 0 12px", color: "#fff" }}>{editingItem ? "Edit Item" : "Add Item"}</h3>
+      <ItemFormModal
+        open={itemModal}
+        editingItem={editingItem}
+        onClose={() => setItemModal(false)}
+        onSave={handleSaveItem}
+      />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
-            <div>
-              <label style={labelStyle}>Type</label>
-              <select style={{ ...inputStyle }} value={itemForm.type}
-                onChange={(e) => setItemForm((f) => ({ ...f, type: e.target.value as TripItemType }))}>
-                {(Object.keys(TYPE_LABELS) as TripItemType[]).map((t) => (
-                  <option key={t} value={t}>{TYPE_LABELS[t]}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Title *</label>
-              <input
-                style={inputStyle}
-                placeholder="e.g. Flight to Venice"
-                value={itemForm.title}
-                onChange={(e) => setItemForm((f) => ({ ...f, title: e.target.value }))}
-                autoFocus
-              />
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div>
-              <label style={labelStyle}>Date</label>
-              <input type="date" style={inputStyle} value={itemForm.date}
-                onChange={(e) => setItemForm((f) => ({ ...f, date: e.target.value }))} />
-            </div>
-            <div>
-              <label style={labelStyle}>Time</label>
-              <input type="time" style={inputStyle} value={itemForm.time}
-                onChange={(e) => setItemForm((f) => ({ ...f, time: e.target.value }))} />
-            </div>
-            <div>
-              <label style={labelStyle}>End date</label>
-              <input type="date" style={inputStyle} value={itemForm.endDate}
-                onChange={(e) => setItemForm((f) => ({ ...f, endDate: e.target.value }))} />
-            </div>
-            <div>
-              <label style={labelStyle}>End time</label>
-              <input type="time" style={inputStyle} value={itemForm.endTime}
-                onChange={(e) => setItemForm((f) => ({ ...f, endTime: e.target.value }))} />
-            </div>
-          </div>
-
-          <label style={labelStyle}>
-            Address / location
-            <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 6 }}>— geocoded for map & weather</span>
-          </label>
-          <input
-            style={inputStyle}
-            placeholder="e.g. Marco Polo Airport, Venice, Italy"
-            value={itemForm.address}
-            onChange={(e) => setItemForm((f) => ({ ...f, address: e.target.value }))}
-          />
-
-          <label style={labelStyle}>Confirmation code</label>
-          <input
-            style={inputStyle}
-            placeholder="e.g. XYZ789"
-            value={itemForm.confirmationCode}
-            onChange={(e) => setItemForm((f) => ({ ...f, confirmationCode: e.target.value }))}
-          />
-
-          <label style={labelStyle}>
-            Description / notes
-            <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 6 }}>(markdown supported)</span>
-          </label>
-          <textarea
-            style={{ ...inputStyle, minHeight: 140, resize: "vertical", fontFamily: "monospace", fontSize: 13, lineHeight: 1.6 }}
-            placeholder={"# Heading\n\n- bullet point\n\n**bold**, _italic_, [link text](https://...)"}
-            value={itemForm.description}
-            onChange={(e) => setItemForm((f) => ({ ...f, description: e.target.value }))}
-          />
-
-          <label style={labelStyle}>Links</label>
-          {itemForm.links.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
-              {itemForm.links.map((link) => (
-                <div key={link.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
-                  background: "rgba(37,244,238,0.06)", borderRadius: 6, border: "1px solid rgba(37,244,238,0.15)" }}>
-                  <span style={{ flex: 1, fontSize: 12, color: "var(--accent-start)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
-                    <LinkIcon size={11} strokeWidth={1.75} style={{ flexShrink: 0 }} /> {link.label || link.url}
-                  </span>
-                  <button onClick={() => removeLink(link.id)}
-                    style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>×</button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              style={{ ...inputStyle, flex: "0 0 120px", width: "auto" }}
-              placeholder="Label"
-              value={newLinkLabel}
-              onChange={(e) => setNewLinkLabel(e.target.value)}
-            />
-            <input
-              style={{ ...inputStyle, flex: 1 }}
-              placeholder="https://…"
-              value={newLinkUrl}
-              onChange={(e) => setNewLinkUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addLink()}
-            />
-            <button className="workout-action-btn" onClick={addLink} disabled={!newLinkUrl.trim()} style={{ flexShrink: 0 }}>
-              <Icon name="plus" size={14} />
-            </button>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <button className="btn secondary" onClick={() => setItemModal(false)}>Cancel</button>
-            <button className="btn primary" onClick={saveItem} disabled={!itemForm.title.trim() || geocoding}>
-              {geocoding ? "Geocoding…" : editingItem ? "Save" : "Add Item"}
-            </button>
-          </div>
-        </div>
-      </Modal>
+      {detailItem && (
+        <ItemDetailModal
+          item={detailItem}
+          sorted={sorted}
+          mode={mode}
+          onClose={() => setDetailItem(null)}
+          onEdit={() => { setDetailItem(null); openItemModal(detailItem); }}
+        />
+      )}
     </div>
   );
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+// ── ItemFormModal ─────────────────────────────────────────────────────────────
+// Owns all form state so keystrokes never re-render the parent module.
+
+type ItemFormModalProps = {
+  open: boolean;
+  editingItem: TripItem | null;
+  onClose: () => void;
+  onSave: (item: TripItem) => void;
+};
+
+function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProps) {
+  const [itemForm, setItemForm] = useState(defaultItemForm);
+  const [newLinkLabel, setNewLinkLabel] = useState("");
+  const [newLinkUrl, setNewLinkUrl] = useState("");
+  const [geocoding, setGeocoding] = useState(false);
+
+  // Initialise / reset form whenever the modal opens or the target item changes
+  useEffect(() => {
+    if (!open) return;
+    setItemForm(
+      editingItem
+        ? { type: editingItem.type, title: editingItem.title, date: editingItem.date,
+            time: editingItem.time || "", endDate: editingItem.endDate || "",
+            endTime: editingItem.endTime || "", address: editingItem.address || "",
+            description: editingItem.description || "",
+            confirmationCode: editingItem.confirmationCode || "",
+            links: editingItem.links || [] }
+        : defaultItemForm
+    );
+    setNewLinkLabel("");
+    setNewLinkUrl("");
+  }, [open, editingItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function addLink() {
+    if (!newLinkUrl.trim()) return;
+    const link: TripLink = { id: uid(), label: newLinkLabel.trim(), url: newLinkUrl.trim() };
+    setItemForm((f) => ({ ...f, links: [...f.links, link] }));
+    setNewLinkLabel("");
+    setNewLinkUrl("");
+  }
+
+  function removeLink(linkId: string) {
+    setItemForm((f) => ({ ...f, links: f.links.filter((l) => l.id !== linkId) }));
+  }
+
+  async function handleSave() {
+    if (!itemForm.title.trim()) return;
+
+    let geoData: { lat?: number; lng?: number; geocodedCity?: string; geocodedCountry?: string } = {};
+    const addressChanged = itemForm.address.trim() !== (editingItem?.address || "").trim();
+    const missingCoords = !!itemForm.address.trim() && editingItem?.lat == null;
+
+    if (itemForm.address.trim() && (addressChanged || missingCoords)) {
+      setGeocoding(true);
+      try {
+        const res = await fetch("/api/trips/geocode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: itemForm.address.trim() }),
+        });
+        if (res.ok) {
+          const geo = await res.json();
+          geoData = { lat: geo.lat, lng: geo.lng, geocodedCity: geo.city, geocodedCountry: geo.country };
+        }
+      } catch (e) {
+        console.error("Geocoding failed", e);
+      } finally {
+        setGeocoding(false);
+      }
+    } else if (!itemForm.address.trim()) {
+      geoData = { lat: undefined, lng: undefined, geocodedCity: undefined, geocodedCountry: undefined };
+    } else if (editingItem) {
+      geoData = { lat: editingItem.lat, lng: editingItem.lng, geocodedCity: editingItem.geocodedCity, geocodedCountry: editingItem.geocodedCountry };
+    }
+
+    onSave({
+      id: editingItem?.id || uid(),
+      ...itemForm,
+      ...geoData,
+      title: itemForm.title.trim(),
+    });
+  }
+
+  return (
+    <Modal open={open} onClose={onClose}>
+      <div style={{ padding: 4 }}>
+        <h3 style={{ margin: "0 0 12px", color: "#fff" }}>{editingItem ? "Edit Item" : "Add Item"}</h3>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
+          <div>
+            <label style={labelStyle}>Type</label>
+            <select style={{ ...inputStyle }} value={itemForm.type}
+              onChange={(e) => setItemForm((f) => ({ ...f, type: e.target.value as TripItemType }))}>
+              {(Object.keys(TYPE_LABELS) as TripItemType[]).map((t) => (
+                <option key={t} value={t}>{TYPE_LABELS[t]}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Title *</label>
+            <input
+              style={inputStyle}
+              placeholder="e.g. Flight to Venice"
+              value={itemForm.title}
+              onChange={(e) => setItemForm((f) => ({ ...f, title: e.target.value }))}
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <label style={labelStyle}>Date</label>
+            <input type="date" style={inputStyle} value={itemForm.date}
+              onChange={(e) => setItemForm((f) => ({ ...f, date: e.target.value }))} />
+          </div>
+          <div>
+            <label style={labelStyle}>Time</label>
+            <input type="time" style={inputStyle} value={itemForm.time}
+              onChange={(e) => setItemForm((f) => ({ ...f, time: e.target.value }))} />
+          </div>
+          <div>
+            <label style={labelStyle}>End date</label>
+            <input type="date" style={inputStyle} value={itemForm.endDate}
+              onChange={(e) => setItemForm((f) => ({ ...f, endDate: e.target.value }))} />
+          </div>
+          <div>
+            <label style={labelStyle}>End time</label>
+            <input type="time" style={inputStyle} value={itemForm.endTime}
+              onChange={(e) => setItemForm((f) => ({ ...f, endTime: e.target.value }))} />
+          </div>
+        </div>
+
+        <label style={labelStyle}>
+          Address / location
+          <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 6 }}>— geocoded for map & weather</span>
+        </label>
+        <input style={inputStyle} placeholder="e.g. Marco Polo Airport, Venice, Italy"
+          value={itemForm.address}
+          onChange={(e) => setItemForm((f) => ({ ...f, address: e.target.value }))} />
+
+        <label style={labelStyle}>Confirmation code</label>
+        <input style={inputStyle} placeholder="e.g. XYZ789"
+          value={itemForm.confirmationCode}
+          onChange={(e) => setItemForm((f) => ({ ...f, confirmationCode: e.target.value }))} />
+
+        <label style={labelStyle}>
+          Description / notes
+          <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 6 }}>(markdown supported)</span>
+        </label>
+        <textarea
+          style={{ ...inputStyle, minHeight: 140, resize: "vertical", fontFamily: "monospace", fontSize: 13, lineHeight: 1.6 }}
+          placeholder={"# Heading\n\n- bullet point\n\n**bold**, _italic_, [link text](https://...)"}
+          value={itemForm.description}
+          onChange={(e) => setItemForm((f) => ({ ...f, description: e.target.value }))}
+        />
+
+        <label style={labelStyle}>Links</label>
+        {itemForm.links.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
+            {itemForm.links.map((link) => (
+              <div key={link.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
+                background: "rgba(37,244,238,0.06)", borderRadius: 6, border: "1px solid rgba(37,244,238,0.15)" }}>
+                <span style={{ flex: 1, fontSize: 12, color: "var(--accent-start)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+                  <LinkIcon size={11} strokeWidth={1.75} style={{ flexShrink: 0 }} /> {link.label || link.url}
+                </span>
+                <button onClick={() => removeLink(link.id)}
+                  style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 6 }}>
+          <input style={{ ...inputStyle, flex: "0 0 120px", width: "auto" }}
+            placeholder="Label" value={newLinkLabel}
+            onChange={(e) => setNewLinkLabel(e.target.value)} />
+          <input style={{ ...inputStyle, flex: 1 }}
+            placeholder="https://…" value={newLinkUrl}
+            onChange={(e) => setNewLinkUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addLink()} />
+          <button className="workout-action-btn" onClick={addLink} disabled={!newLinkUrl.trim()} style={{ flexShrink: 0 }}>
+            <Icon name="plus" size={14} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+          <button className="btn secondary" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={handleSave} disabled={!itemForm.title.trim() || geocoding}>
+            {geocoding ? "Geocoding…" : editingItem ? "Save" : "Add Item"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 function DayHeader({ label }: { label: string }) {
   return (
@@ -972,9 +1062,10 @@ type ItemCardProps = {
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onFullscreen: () => void;
 };
 
-function ItemCard({ item, expanded, highlighted, sorted, mode, onToggle, onEdit, onDelete }: ItemCardProps) {
+function ItemCard({ item, expanded, highlighted, sorted, mode, onToggle, onEdit, onDelete, onFullscreen }: ItemCardProps) {
   const TIcon = TYPE_ICON[item.type];
   const [pickerOpen, setPickerOpen] = useState(false);
   const otherItemsWithAddress = sorted.filter((i) => i.id !== item.id && !!i.address?.trim());
@@ -1008,6 +1099,7 @@ function ItemCard({ item, expanded, highlighted, sorted, mode, onToggle, onEdit,
           )}
         </div>
         <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+          <button className="workout-action-btn" title="View full details" onClick={onFullscreen}><Expand size={12} strokeWidth={1.75} /></button>
           <button className="workout-action-btn" title="Edit" onClick={onEdit}><Icon name="edit" size={12} /></button>
           <button className="workout-action-btn danger" title="Delete" onClick={onDelete}>×</button>
         </div>
@@ -1217,6 +1309,212 @@ function CityWeatherCard({ cw, tripDates }: { cw: CityWeather; tripDates: Set<st
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Item Detail Modal ────────────────────────────────────────────────────────
+
+type ItemDetailModalProps = {
+  item: TripItem;
+  sorted: TripItem[];
+  mode: TransportMode;
+  onClose: () => void;
+  onEdit: () => void;
+};
+
+function ItemDetailModal({ item, sorted, mode, onClose, onEdit }: ItemDetailModalProps) {
+  const TIcon = TYPE_ICON[item.type];
+  const ModeIcon = MODE_ICON[mode];
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const otherItemsWithAddress = sorted.filter((i) => i.id !== item.id && !!i.address?.trim());
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 80,
+        background: "rgba(2,6,12,0.75)", backdropFilter: "blur(8px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "16px 16px env(safe-area-inset-bottom, 16px)",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: 660,
+          maxHeight: "calc(100dvh - 32px)", overflowY: "auto",
+          WebkitOverflowScrolling: "touch" as any,
+          background: "var(--card)",
+          border: "1px solid rgba(255,255,255,0.07)",
+          borderRadius: 16,
+          boxShadow: "0 24px 60px rgba(0,0,0,0.7)",
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        {/* Sticky header bar */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+          position: "sticky", top: 0, background: "var(--card)", zIndex: 2,
+          borderRadius: "16px 16px 0 0",
+        }}>
+          <TIcon size={18} strokeWidth={1.75} style={{ flexShrink: 0, color: "var(--accent-start)" }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-start)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              {TYPE_LABELS[item.type]}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+              {formatDateShort(item.date)}
+              {item.time && <> · {formatTime(item.time)}</>}
+              {item.endTime && <> → {formatTime(item.endTime)}</>}
+              {item.endDate && item.endDate !== item.date && <> → {formatDateShort(item.endDate)}</>}
+            </div>
+          </div>
+          <button onClick={onEdit} style={{
+            background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 8, padding: "6px 10px", cursor: "pointer",
+            color: "var(--muted)", display: "flex", alignItems: "center", gap: 5, fontSize: 12,
+          }}>
+            <Icon name="edit" size={13} /> Edit
+          </button>
+          <button onClick={onClose} style={{
+            background: "transparent", border: "none", cursor: "pointer",
+            color: "rgba(255,255,255,0.4)", padding: 4, lineHeight: 0, borderRadius: 6,
+          }}>
+            <X size={18} strokeWidth={1.75} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "20px 20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* Title */}
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", lineHeight: 1.3 }}>
+            {item.title}
+          </div>
+
+          {/* Address */}
+          {item.address && (
+            <div style={{ display: "flex", gap: 7, alignItems: "flex-start" }}>
+              <MapPin size={14} strokeWidth={1.75} style={{ flexShrink: 0, marginTop: 2, color: "var(--muted)" }} />
+              <span style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", lineHeight: 1.4 }}>{item.address}</span>
+            </div>
+          )}
+
+          {/* Confirmation code */}
+          {item.confirmationCode && (
+            <div style={{
+              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 8, padding: "10px 14px",
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                Confirmation
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 15, color: "#fff", letterSpacing: "0.04em" }}>
+                {item.confirmationCode}
+              </div>
+            </div>
+          )}
+
+          {/* Notes / Description */}
+          {item.description && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                Notes
+              </div>
+              <div className="trip-markdown trip-markdown-detail">
+                <ReactMarkdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>
+                  {item.description}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
+
+          {/* Links */}
+          {item.links.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                Links
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {item.links.map((link) => (
+                  <a key={link.id} href={link.url} target="_blank" rel="noopener noreferrer" style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 500,
+                    background: "rgba(37,244,238,0.08)", border: "1px solid rgba(37,244,238,0.2)",
+                    color: "var(--accent-start)", textDecoration: "none",
+                  }}>
+                    <LinkIcon size={12} strokeWidth={1.75} /> {link.label || "Link"}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Directions */}
+          {item.address && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                Directions
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+                <button onClick={() => openRoute(item.address!, "geo", mode)} style={{
+                  padding: "7px 14px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+                  background: "rgba(132,86,255,0.15)", border: "1px solid rgba(132,86,255,0.35)",
+                  color: "#c4b0ff", display: "flex", alignItems: "center", gap: 6,
+                }}>
+                  <ModeIcon size={14} strokeWidth={1.75} />
+                  <Navigation size={13} strokeWidth={1.75} />
+                  From my location
+                </button>
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => setPickerOpen((p) => !p)} style={{
+                    padding: "7px 14px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+                    background: pickerOpen ? "rgba(37,244,238,0.15)" : "rgba(37,244,238,0.08)",
+                    border: "1px solid rgba(37,244,238,0.2)",
+                    color: "var(--accent-start)", display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    <ModeIcon size={14} strokeWidth={1.75} />
+                    From item
+                    <ChevronDown size={13} strokeWidth={2} style={{ transform: pickerOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                  </button>
+                  {pickerOpen && (
+                    <div style={{
+                      position: "absolute", bottom: "calc(100% + 4px)", left: 0,
+                      background: "rgba(10,14,20,0.97)", backdropFilter: "blur(8px)",
+                      border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10,
+                      zIndex: 30, minWidth: 230, maxHeight: 220, overflowY: "auto",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+                    }}>
+                      {otherItemsWithAddress.length === 0 ? (
+                        <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--muted)" }}>No other items with addresses</div>
+                      ) : otherItemsWithAddress.map((other) => {
+                        const OtherIcon = TYPE_ICON[other.type];
+                        return (
+                          <button key={other.id} onClick={() => { openRoute(item.address!, other.address!, mode); setPickerOpen(false); }}
+                            style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left", padding: "9px 14px", background: "transparent", border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)", cursor: "pointer", color: "#eef2f5", fontSize: 13 }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(37,244,238,0.07)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                          >
+                            <OtherIcon size={13} strokeWidth={1.75} style={{ flexShrink: 0, color: "rgba(255,255,255,0.45)" }} />
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{other.title}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -632,21 +632,36 @@ h1 {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: rgba(2, 6, 12, 0.6);
   backdrop-filter: blur(6px);
   z-index: 60;
+  /* overflow is handled by modal-scroll-wrap, not here */
 }
+
+/* Non-fixed scrollable wrapper — iOS keeps the input accessory bar
+   (autofill toolbar) anchored to the keyboard when overflow-y: auto
+   is on a non-fixed element.  Using 100dvh so the modal fits inside
+   the visual viewport even when the on-screen keyboard is open. */
+.modal-scroll-wrap {
+  height: 100%;
+  max-height: 100dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px env(safe-area-inset-bottom, 20px);
+  box-sizing: border-box;
+}
+
 .modal {
   background: var(--card);
   padding: 16px;
   border-radius: 12px;
   max-width: 520px;
   width: 92%;
-  max-height: 90vh;
-  overflow-y: auto;
+  flex-shrink: 0; /* don't compress inside flex */
+  margin: auto;   /* center when there's room; overflow handled by scroll-wrap */
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.03);
 }
@@ -1354,6 +1369,14 @@ h1 {
   padding: 10px 12px;
   overflow-x: auto;
 }
+
+/* Detail modal — slightly larger, more readable markdown */
+.trip-markdown-detail { font-size: 14px; margin-top: 0; }
+.trip-markdown-detail h1 { font-size: 18px; }
+.trip-markdown-detail h2 { font-size: 16px; }
+.trip-markdown-detail h3 { font-size: 15px; }
+.trip-markdown-detail > * { margin-bottom: 10px; }
+.trip-markdown-detail li { margin-bottom: 5px; }
 .trip-markdown pre code {
   background: none;
   padding: 0;
