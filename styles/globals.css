@@ -153,7 +153,7 @@ h1 {
   left: 50%;
   transform: translateX(-50%);
   bottom: 28px;
-  background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   color: #071018;
   border: 0;
   width: 56px;
@@ -214,7 +214,7 @@ h1 {
   height: 48px;
   border-radius: 50%;
   flex: 0 0 48px;
-  background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -347,16 +347,18 @@ h1 {
 }
 .cal-btn {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
   color: var(--muted);
   padding: 6px 8px;
   border-radius: 8px;
   cursor: pointer;
 }
 .cal-btn.active {
-  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   color: #071018;
-  border: 0;
+  border: none;
+  box-shadow: none;
 }
 .calendar-day .day-list {
   list-style: none;
@@ -556,8 +558,8 @@ h1 {
 .task-add-btn {
   padding: 8px 12px;
   border-radius: 10px;
-  border: 0;
-  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+  border: none;
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   color: #071018;
   cursor: pointer;
 }
@@ -712,7 +714,7 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.03);
 }
 .btn.primary {
-  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   color: #071018;
 }
 
@@ -781,13 +783,13 @@ h1 {
   font-weight: 500;
 }
 .workout-create-btn {
- background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+ background: linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   color: #071018;
   border: 0;
   border-radius: 8px;
 }
 .workout-add-lift-btn {
-  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   color: #071018;
   padding: "8px 16px";
   border: none;
@@ -921,9 +923,9 @@ h1 {
 
 /* Update existing workout-create-btn to match task-add-btn */
 .workout-create-btn {
-  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   color: #071018;
-  border: 0;
+  border: none;
   border-radius: 8px;
   padding: 10px 16px;
   font-weight: 600;
@@ -1155,7 +1157,7 @@ h1 {
 .workout-submit-btn {
   width: 100%;
   padding: 12px 16px;
-  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   border: 0;
   border-radius: 8px;
   color: #071018;
@@ -1287,7 +1289,7 @@ h1 {
   transition: 0.2s;
 }
 .switch input:checked + .slider {
-  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4);
   border-color: transparent;
 }
 .switch input:checked + .slider::before {

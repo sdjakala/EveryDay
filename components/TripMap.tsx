@@ -167,7 +167,7 @@ export default function TripMap({
     if (!mapRef.current || !highlightedId) return;
     const item = items.find((i) => i.id === highlightedId);
     if (!item) return;
-    const fly = () => mapRef.current?.flyTo({ center: [item.lng, item.lat], zoom: 14, duration: 700 });
+    const fly = () => mapRef.current?.flyTo({ center: [item.lng, item.lat], zoom: 16, duration: 700 });
     if (mapRef.current.isStyleLoaded()) fly();
     else mapRef.current.once("load", fly);
   }, [highlightedId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -339,7 +339,7 @@ export default function TripMap({
 function overlayBtn(disabled: boolean, active = false): React.CSSProperties {
   return {
     background: active
-      ? "linear-gradient(90deg,var(--accent-start),var(--accent-end))"
+      ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)"
       : "rgba(10,14,20,0.85)",
     border: "1px solid " + (active ? "transparent" : "rgba(255,255,255,0.15)"),
     borderRadius: 8,

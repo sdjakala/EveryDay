@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import Modal from "../../components/Modal";
@@ -189,6 +189,7 @@ const defaultItemForm = {
   endDate: "",
   endTime: "",
   address: "",
+  city: "",
   description: "",
   confirmationCode: "",
   links: [] as TripLink[],
@@ -232,6 +233,7 @@ export default function TripPlannerModule() {
   const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].url);
   const [focusDate, setFocusDate] = useState<string | null>(null);
   const [focusCity, setFocusCity] = useState<string | null>(null);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
 
   const [tripModal, setTripModal] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
@@ -384,6 +386,7 @@ export default function TripPlannerModule() {
   }
 
   async function deleteItem(itemId: string) {
+    if (!confirm("Delete this item?")) return;
     const trip = trips.find((t) => t.id === selectedId);
     if (!trip) return;
     const updatedTrip = { ...trip, items: trip.items.filter((i) => i.id !== itemId) };
@@ -423,17 +426,24 @@ export default function TripPlannerModule() {
     setFocusCity(null);
   }
 
-  if (loading) return <div style={{ color: "var(--muted)", padding: 12 }}>Loading trips…</div>;
-
+  // ── Derived data (all hooks before any early return) ─────────────────────────
   const selectedTrip = trips.find((t) => t.id === selectedId) ?? null;
-  const sorted = selectedTrip ? sortByDateTime(selectedTrip.items) : [];
-  const days = groupByDay(sorted);
-  const mapMarkers = sorted.filter((i) => i.lat != null && i.lng != null).map((i) => ({
-    id: i.id, lat: i.lat!, lng: i.lng!, title: i.title, type: i.type,
-  }));
 
-  // Unique cities that have geocoded items (for the city filter pills)
-  const uniqueMapCities = Array.from(
+  const sorted = useMemo(
+    () => selectedTrip ? sortByDateTime(selectedTrip.items) : [],
+    [selectedTrip]
+  );
+
+  const days = useMemo(() => groupByDay(sorted), [sorted]);
+
+  const mapMarkers = useMemo(
+    () => sorted.filter((i) => i.lat != null && i.lng != null).map((i) => ({
+      id: i.id, lat: i.lat!, lng: i.lng!, title: i.title, type: i.type,
+    })),
+    [sorted]
+  );
+
+  const uniqueMapCities = useMemo(() => Array.from(
     sorted
       .filter((i) => i.geocodedCity)
       .reduce<Map<string, { city: string; count: number }>>((acc, i) => {
@@ -444,71 +454,78 @@ export default function TripPlannerModule() {
         return acc;
       }, new Map())
       .values()
+  ), [sorted]);
+
+  const mapTabItems = useMemo(
+    () => focusCity
+      ? sorted.filter((i) => i.geocodedCity?.toLowerCase() === focusCity.toLowerCase())
+      : sorted,
+    [sorted, focusCity]
   );
 
-  // Items visible in the map tab list (filtered by active city)
-  const mapTabItems = focusCity
-    ? sorted.filter((i) => i.geocodedCity?.toLowerCase() === focusCity.toLowerCase())
-    : sorted;
+  const itemsByDate = useMemo(
+    () => mapTabItems.reduce<Map<string, TripItem[]>>((acc, item) => {
+      const key = item.date || "";
+      if (!acc.has(key)) acc.set(key, []);
+      acc.get(key)!.push(item);
+      return acc;
+    }, new Map()),
+    [mapTabItems]
+  );
 
-  // Date-grouped items for map tab list
-  const itemsByDate = mapTabItems.reduce<Map<string, TripItem[]>>((acc, item) => {
-    const key = item.date || "";
-    if (!acc.has(key)) acc.set(key, []);
-    acc.get(key)!.push(item);
-    return acc;
-  }, new Map());
+  // Stable reference — only changes when filter values or trip items change,
+  // preventing TripMap's focusIds effect from firing on every render.
+  const focusIds = useMemo(() => {
+    if (!focusDate && !focusCity) return null;
+    return sorted.filter((i) => {
+      const dateMatch = !focusDate || i.date === focusDate;
+      const cityMatch = !focusCity || i.geocodedCity?.toLowerCase() === focusCity.toLowerCase();
+      return i.lat != null && dateMatch && cityMatch;
+    }).map((i) => i.id);
+  }, [focusDate, focusCity, sorted]);
 
-  // IDs of geocoded items matching active city + day filters (null = no filter = fit all)
-  const focusIds = (focusDate || focusCity)
-    ? sorted.filter((i) => {
-        const dateMatch = !focusDate || i.date === focusDate;
-        const cityMatch = !focusCity || i.geocodedCity?.toLowerCase() === focusCity.toLowerCase();
-        return i.lat != null && dateMatch && cityMatch;
-      }).map((i) => i.id)
-    : null;
+  if (loading) return <div style={{ color: "var(--muted)", padding: 12 }}>Loading trips…</div>;
 
   return (
     <div style={{ width: "100%" }}>
 
-      {/* ── Compact header bar ─────────────────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-        {trips.length > 0 && (
-          <select
-            value={selectedId || ""}
-            onChange={(e) => selectTrip(e.target.value)}
-            style={{ ...inputStyle, flex: 1, minWidth: 140, width: "auto", fontSize: 13, padding: "6px 8px" }}
-          >
-            {trips.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-        )}
-        {selectedTrip && (
-          <>
-            <button className="cal-btn" onClick={() => openTripModal(selectedTrip)} style={{ fontSize: 12, padding: "5px 10px" }}>Edit</button>
-            <button className="workout-action-btn danger" onClick={() => deleteTrip(selectedTrip.id)} title="Delete trip">×</button>
-          </>
-        )}
-        <button className="workout-create-btn" onClick={() => openTripModal()} style={{ fontSize: 12, padding: "5px 10px" }}>
-          <Icon name="plus" size={13} /> New
-        </button>
-      </div>
-
-      {trips.length === 0 && (
-        <div style={{
-          textAlign: "center", padding: "2rem 1rem", color: "var(--muted)",
-          background: "rgba(255,255,255,0.02)", borderRadius: 12,
-          border: "1px dashed rgba(255,255,255,0.08)",
-        }}>
-          No trips yet. Create one to get started.
-        </div>
-      )}
-
-      {selectedTrip && (
+      {/* ── Collapsible header ─────────────────────────────────────────────── */}
+      {!headerCollapsed && (
         <>
-          {/* Trip date/description strip */}
-          {(selectedTrip.startDate || selectedTrip.description) && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+            {trips.length > 0 && (
+              <select
+                value={selectedId || ""}
+                onChange={(e) => selectTrip(e.target.value)}
+                style={{ ...inputStyle, flex: 1, minWidth: 140, width: "auto", fontSize: 13, padding: "6px 8px" }}
+              >
+                {trips.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
+            {selectedTrip && (
+              <>
+                <button className="cal-btn" onClick={() => openTripModal(selectedTrip)} style={{ fontSize: 12, padding: "5px 10px" }}>Edit</button>
+                <button className="workout-action-btn danger" onClick={() => deleteTrip(selectedTrip.id)} title="Delete trip">×</button>
+              </>
+            )}
+            <button className="workout-create-btn" onClick={() => openTripModal()} style={{ fontSize: 12, padding: "5px 10px" }}>
+              <Icon name="plus" size={13} /> New
+            </button>
+          </div>
+
+          {trips.length === 0 && (
+            <div style={{
+              textAlign: "center", padding: "2rem 1rem", color: "var(--muted)",
+              background: "rgba(255,255,255,0.02)", borderRadius: 12,
+              border: "1px dashed rgba(255,255,255,0.08)",
+            }}>
+              No trips yet. Create one to get started.
+            </div>
+          )}
+
+          {selectedTrip && (selectedTrip.startDate || selectedTrip.description) && (
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
               {selectedTrip.startDate && (
                 <span>{formatDateShort(selectedTrip.startDate)}{selectedTrip.endDate && ` → ${formatDateShort(selectedTrip.endDate)}`}</span>
@@ -516,9 +533,19 @@ export default function TripPlannerModule() {
               {selectedTrip.description && <span style={{ opacity: 0.7 }}>{selectedTrip.description}</span>}
             </div>
           )}
+        </>
+      )}
 
-          {/* ── Tabs ──────────────────────────────────────────────────────── */}
-          <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
+      {selectedTrip && (
+        <>
+          {/* ── Tabs — sticky below the global topbar ─────────────────────── */}
+          <div style={{
+            position: "sticky", top: 64, zIndex: 10,
+            margin: "0 -12px", padding: "8px 12px 10px",
+            background: "rgba(15,15,16,0.92)", backdropFilter: "blur(10px)",
+            borderBottom: "1px solid rgba(255,255,255,0.05)",
+            display: "flex", gap: 4, alignItems: "center",
+          }}>
             {(["itinerary", "map", "weather"] as Tab[]).map((t) => (
               <button
                 key={t}
@@ -527,15 +554,34 @@ export default function TripPlannerModule() {
                   padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
                   cursor: "pointer", textTransform: "capitalize",
                   background: tab === t
-                    ? "linear-gradient(90deg,var(--accent-start),var(--accent-end))"
+                    ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)"
                     : "rgba(255,255,255,0.05)",
-                  border: "1px solid " + (tab === t ? "transparent" : "rgba(255,255,255,0.08)"),
+                  border: "none",
+                  boxShadow: tab === t ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.08)",
                   color: tab === t ? "#071018" : "var(--muted)",
                 }}
               >
                 {t}
               </button>
             ))}
+
+            {/* Collapse / expand header toggle */}
+            <button
+              onClick={() => setHeaderCollapsed((c) => !c)}
+              title={headerCollapsed ? "Show trip selector" : "Hide trip selector"}
+              style={{
+                marginLeft: "auto", background: "none", border: "none",
+                color: "var(--muted)", cursor: "pointer", padding: "4px 6px",
+                display: "flex", alignItems: "center", borderRadius: 6,
+                transition: "color 0.15s",
+              }}
+            >
+              <ChevronDown
+                size={14}
+                strokeWidth={2}
+                style={{ transform: headerCollapsed ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}
+              />
+            </button>
           </div>
 
           {/* ── Itinerary tab ─────────────────────────────────────────────── */}
@@ -591,8 +637,9 @@ export default function TripPlannerModule() {
                     onClick={() => setMapStyle(s.url)}
                     style={{
                       padding: "4px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                      background: mapStyle === s.url ? "linear-gradient(90deg,var(--accent-start),var(--accent-end))" : "rgba(255,255,255,0.05)",
-                      border: "1px solid " + (mapStyle === s.url ? "transparent" : "rgba(255,255,255,0.08)"),
+                      background: mapStyle === s.url ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
+                      border: "none",
+                      boxShadow: mapStyle === s.url ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.08)",
                       color: mapStyle === s.url ? "#071018" : "var(--muted)",
                     }}
                   >
@@ -620,8 +667,9 @@ export default function TripPlannerModule() {
                     onClick={() => { setFocusCity(null); setFocusDate(null); }}
                     style={{
                       padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                      background: !focusCity ? "linear-gradient(90deg,var(--accent-start),var(--accent-end))" : "rgba(255,255,255,0.05)",
-                      border: "1px solid " + (!focusCity ? "transparent" : "rgba(255,255,255,0.1)"),
+                      background: !focusCity ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
+                      border: "none",
+                      boxShadow: !focusCity ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.1)",
                       color: !focusCity ? "#071018" : "var(--muted)",
                     }}
                   >
@@ -635,8 +683,9 @@ export default function TripPlannerModule() {
                         onClick={() => { setFocusCity(active ? null : city); setFocusDate(null); }}
                         style={{
                           padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                          background: active ? "linear-gradient(90deg,var(--accent-start),var(--accent-end))" : "rgba(255,255,255,0.05)",
-                          border: "1px solid " + (active ? "transparent" : "rgba(255,255,255,0.1)"),
+                          background: active ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
+                          border: "none",
+                          boxShadow: active ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.1)",
                           color: active ? "#071018" : "var(--muted)",
                         }}
                       >
@@ -851,6 +900,7 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
         ? { type: editingItem.type, title: editingItem.title, date: editingItem.date,
             time: editingItem.time || "", endDate: editingItem.endDate || "",
             endTime: editingItem.endTime || "", address: editingItem.address || "",
+            city: editingItem.geocodedCity || "",
             description: editingItem.description || "",
             confirmationCode: editingItem.confirmationCode || "",
             links: editingItem.links || [] }
@@ -889,7 +939,9 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
         });
         if (res.ok) {
           const geo = await res.json();
-          geoData = { lat: geo.lat, lng: geo.lng, geocodedCity: geo.city, geocodedCountry: geo.country };
+          // Use geocoded city only if the user hasn't set one manually
+          const resolvedCity = itemForm.city.trim() || geo.city;
+          geoData = { lat: geo.lat, lng: geo.lng, geocodedCity: resolvedCity, geocodedCountry: geo.country };
         }
       } catch (e) {
         console.error("Geocoding failed", e);
@@ -897,9 +949,9 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
         setGeocoding(false);
       }
     } else if (!itemForm.address.trim()) {
-      geoData = { lat: undefined, lng: undefined, geocodedCity: undefined, geocodedCountry: undefined };
+      geoData = { lat: undefined, lng: undefined, geocodedCity: itemForm.city.trim() || undefined, geocodedCountry: undefined };
     } else if (editingItem) {
-      geoData = { lat: editingItem.lat, lng: editingItem.lng, geocodedCity: editingItem.geocodedCity, geocodedCountry: editingItem.geocodedCountry };
+      geoData = { lat: editingItem.lat, lng: editingItem.lng, geocodedCity: itemForm.city.trim() || editingItem.geocodedCity, geocodedCountry: editingItem.geocodedCountry };
     }
 
     onSave({
@@ -967,6 +1019,14 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
         <input style={inputStyle} placeholder="e.g. Marco Polo Airport, Venice, Italy"
           value={itemForm.address}
           onChange={(e) => setItemForm((f) => ({ ...f, address: e.target.value }))} />
+
+        <label style={labelStyle}>
+          City
+          <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 6 }}>— auto-filled from address, or set manually</span>
+        </label>
+        <input style={inputStyle} placeholder="e.g. Rome"
+          value={itemForm.city}
+          onChange={(e) => setItemForm((f) => ({ ...f, city: e.target.value }))} />
 
         <label style={labelStyle}>Confirmation code</label>
         <input style={inputStyle} placeholder="e.g. XYZ789"
@@ -1041,8 +1101,9 @@ function ModeToggle({ mode, setMode, compact }: { mode: TransportMode; setMode: 
       <span style={{ fontSize: 11, color: "var(--muted)", marginRight: 2 }}>Mode:</span>
       {(Object.entries(MODE_ICON) as [TransportMode, React.ComponentType<LucideProps>][]).map(([m, ModeIcon]) => (
         <button key={m} onClick={() => setMode(m)} title={m} style={{
-          background: mode === m ? "linear-gradient(90deg,var(--accent-start),var(--accent-end))" : "rgba(255,255,255,0.05)",
-          border: "1px solid " + (mode === m ? "transparent" : "rgba(255,255,255,0.08)"),
+          background: mode === m ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
+          border: "none",
+          boxShadow: mode === m ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.08)",
           borderRadius: 8, padding: "5px 7px", cursor: "pointer", lineHeight: 0,
           color: mode === m ? "#071018" : "var(--muted)", display: "flex", alignItems: "center",
         }}>

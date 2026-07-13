@@ -279,7 +279,7 @@ export default function ConnectionsModule() {
                     onClick={() => updateConnectionStatus(conn.id, "accepted")}
                     style={{
                       padding: "6px 12px",
-                      background: "linear-gradient(90deg, var(--accent-start), var(--accent-end))",
+                      background: "linear-gradient(90deg, var(--accent-start), var(--accent-end) 80%, #5c2fd4)",
                       color: "#071018",
                       border: "none",
                       borderRadius: "4px",
