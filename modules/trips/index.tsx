@@ -245,6 +245,7 @@ export default function TripPlannerModule() {
   const [mode, setMode] = useState<TransportMode>("transit");
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+  const [mapZoomToId, setMapZoomToId] = useState<string | null>(null);
   const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].url);
   const [focusDate, setFocusDate] = useState<string | null>(null);
   const [focusCity, setFocusCity] = useState<string | null>(null);
@@ -472,6 +473,7 @@ export default function TripPlannerModule() {
     setWeatherFetchedFor(null);
     setCityWeather([]);
     setHighlightedItemId(null);
+    setMapZoomToId(null);
     setFocusDate(null);
     setFocusCity(null);
     setEditMode(false);
@@ -743,7 +745,7 @@ export default function TripPlannerModule() {
                 </div>
               ) : (
                 <div style={{ height: 320, marginBottom: 12, borderRadius: 12, overflow: "hidden" }}>
-                  <TripMap items={mapMarkers} highlightedId={highlightedItemId} onMarkerClick={handleMarkerClick} mapStyle={mapStyle} focusIds={focusIds} />
+                  <TripMap items={mapMarkers} highlightedId={highlightedItemId} onMarkerClick={handleMarkerClick} mapStyle={mapStyle} focusIds={focusIds} zoomToId={mapZoomToId} />
                 </div>
               )}
 
@@ -829,7 +831,11 @@ export default function TripPlannerModule() {
                         return (
                           <div
                             key={item.id}
-                            onClick={() => setHighlightedItemId((prev) => prev === item.id ? null : item.id)}
+                            onClick={() => {
+                              const next = highlightedItemId === item.id ? null : item.id;
+                              setHighlightedItemId(next);
+                              setMapZoomToId(next);
+                            }}
                             style={{
                               display: "flex", gap: 8, alignItems: "center", padding: "8px 10px",
                               borderRadius: 8, cursor: "pointer",
@@ -1440,119 +1446,132 @@ function WeatherGrid({ cityWeather, tripItems }: { cityWeather: CityWeather[]; t
 
   const CITY_COL = 110;
   const DAY_COL  = 62;
-  // Single grid column definition — shared by header + every city row
-  const gridCols = `${CITY_COL}px repeat(${allDates.length}, ${DAY_COL}px)`;
+  // Fixed row heights keep the two panels aligned without JS measurement
+  const HDR_H    = 32;
+  const ROW_H    = 90;
+  const ROW_GAP  = 6;
 
-  // Shared cell border colour
   const rowBorder = "1px solid rgba(37,244,238,0.13)";
   const rowBg     = "rgba(255,255,255,0.025)";
 
   return (
-    <div style={{ overflowX: "auto", paddingTop: 12 }} className="trip-weather-scroll">
-      {/* Flat grid — one definition, all rows aligned automatically */}
-      <div style={{ display: "grid", gridTemplateColumns: gridCols, rowGap: 6 }}>
+    <div style={{ display: "flex", paddingTop: 12 }} className="trip-weather-scroll">
 
-        {/* ── Date header ─────────────────────────────────────────────── */}
-        {/* Sticky spacer — transparent so it blends with the card background */}
-        <div style={{
-          position: "sticky", left: 0, zIndex: 2,
-          background: "transparent", paddingBottom: 4,
-        }} />
-        {allDates.map((date) => {
-          const d = new Date(date + "T12:00:00");
-          return (
-            <div key={date} style={{ textAlign: "center", paddingBottom: 4 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.5)", letterSpacing: "0.05em" }}>
-                {d.toLocaleDateString("en-US", { weekday: "short" })}
-              </div>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>
-                {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-              </div>
+      {/* ── Left: city label column (outside scroll, always visible) ────── */}
+      <div style={{
+        flexShrink: 0, width: CITY_COL,
+        display: "flex", flexDirection: "column", gap: ROW_GAP,
+      }}>
+        {/* Spacer matching the date-header row height */}
+        <div style={{ height: HDR_H, flexShrink: 0 }} />
+
+        {cityWeather.map((cw) => (
+          <div key={cw.city} style={{
+            height: ROW_H, flexShrink: 0, boxSizing: "border-box",
+            background: "#0d1b26",
+            border: rowBorder, borderRight: "none",
+            padding: "8px 10px",
+            display: "flex", flexDirection: "column", justifyContent: "center",
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {cw.city}
             </div>
-          );
-        })}
-
-        {/* ── City rows ───────────────────────────────────────────────── */}
-        {cityWeather.map((cw) => {
-          const key    = cw.city.toLowerCase();
-          const fcMap  = forecastByCity.get(key)!;
-          const tDates = tripDatesByCity.get(key)!;
-          const n      = allDates.length;
-
-          return (
-            <React.Fragment key={cw.city}>
-              {/* City label — sticky left */}
-              <div style={{
-                position: "sticky", left: 0, zIndex: 1,
-                background: "#0d1b26",
-                border: rowBorder, borderRight: "none",
-                padding: "8px 10px",
-                display: "flex", flexDirection: "column", justifyContent: "center",
-              }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {cw.city}
-                </div>
-                {cw.currentTemp != null && (
-                  <div style={{ fontSize: 17, fontWeight: 700, color: "var(--accent-start)", lineHeight: 1.1, marginTop: 2 }}>
-                    {Math.round(cw.currentTemp)}°
-                    <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted)", marginLeft: 4 }}>now</span>
-                  </div>
-                )}
-                {cw.currentCondition && (
-                  <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {cw.currentCondition}
-                  </div>
-                )}
+            {cw.currentTemp != null && (
+              <div style={{ fontSize: 17, fontWeight: 700, color: "var(--accent-start)", lineHeight: 1.1, marginTop: 2 }}>
+                {Math.round(cw.currentTemp)}°
+                <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted)", marginLeft: 4 }}>now</span>
               </div>
+            )}
+            {cw.currentCondition && (
+              <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {cw.currentCondition}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
 
-              {/* Day cells */}
-              {allDates.map((date, i) => {
-                const day      = fcMap.get(date);
-                const hasEvent = tDates.has(date);
-                const isLast   = i === n - 1;
-                return (
-                  <div key={date} style={{
-                    textAlign: "center", padding: "6px 2px",
-                    background: hasEvent ? "rgba(37,244,238,0.07)" : rowBg,
-                    borderTop: rowBorder, borderBottom: rowBorder,
-                    borderRight: isLast ? rowBorder : "none",
-                    borderLeft: "1px solid rgba(255,255,255,0.05)",
-                  }}>
-                    {day ? (
-                      <>
-                        {day.icon && (
-                          <img src={day.icon} alt={day.condition}
-                            style={{ width: 28, height: 28, margin: "0 auto 2px", display: "block" }} />
-                        )}
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#fff" }}>
-                          {day.high != null ? `${Math.round(day.high)}°` : "–"}
+      {/* ── Right: horizontally scrollable day columns ───────────────────── */}
+      <div style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${allDates.length}, ${DAY_COL}px)`,
+          rowGap: ROW_GAP,
+        }}>
+
+          {/* Date headers */}
+          {allDates.map((date) => {
+            const d = new Date(date + "T12:00:00");
+            return (
+              <div key={date} style={{
+                height: HDR_H, boxSizing: "border-box",
+                textAlign: "center", paddingBottom: 4,
+                display: "flex", flexDirection: "column", justifyContent: "flex-end",
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.5)", letterSpacing: "0.05em" }}>
+                  {d.toLocaleDateString("en-US", { weekday: "short" })}
+                </div>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>
+                  {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* City day cells */}
+          {cityWeather.map((cw) => {
+            const key    = cw.city.toLowerCase();
+            const fcMap  = forecastByCity.get(key)!;
+            const tDates = tripDatesByCity.get(key)!;
+            const n      = allDates.length;
+            return allDates.map((date, i) => {
+              const day      = fcMap.get(date);
+              const hasEvent = tDates.has(date);
+              const isLast   = i === n - 1;
+              return (
+                <div key={`${cw.city}-${date}`} style={{
+                  height: ROW_H, boxSizing: "border-box",
+                  textAlign: "center", padding: "6px 2px",
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                  background: hasEvent ? "rgba(37,244,238,0.07)" : rowBg,
+                  borderTop: rowBorder, borderBottom: rowBorder,
+                  borderRight: isLast ? rowBorder : "none",
+                  borderLeft: "1px solid rgba(255,255,255,0.05)",
+                }}>
+                  {day ? (
+                    <>
+                      {day.icon && (
+                        <img src={day.icon} alt={day.condition}
+                          style={{ width: 28, height: 28, marginBottom: 2 }} />
+                      )}
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#fff" }}>
+                        {day.high != null ? `${Math.round(day.high)}°` : "–"}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                        {day.low != null ? `${Math.round(day.low)}°` : "–"}
+                      </div>
+                      {day.precipProbability > 0 && (
+                        <div style={{ fontSize: 9, color: "rgba(37,244,238,0.7)", marginTop: 1 }}>
+                          {day.precipProbability}%
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                          {day.low != null ? `${Math.round(day.low)}°` : "–"}
-                        </div>
-                        {day.precipProbability > 0 && (
-                          <div style={{ fontSize: 9, color: "rgba(37,244,238,0.7)", marginTop: 1 }}>
-                            {day.precipProbability}%
-                          </div>
-                        )}
-                        {hasEvent && (
-                          <div style={{
-                            width: 4, height: 4, borderRadius: "50%",
-                            background: "var(--accent-start)",
-                            margin: "3px auto 0",
-                            boxShadow: "0 0 5px rgba(37,244,238,0.8)",
-                          }} />
-                        )}
-                      </>
-                    ) : (
-                      <div style={{ color: "rgba(255,255,255,0.1)", fontSize: 18, lineHeight: "60px" }}>·</div>
-                    )}
-                  </div>
-                );
-              })}
-            </React.Fragment>
-          );
-        })}
+                      )}
+                      {hasEvent && (
+                        <div style={{
+                          width: 4, height: 4, borderRadius: "50%",
+                          background: "var(--accent-start)",
+                          marginTop: 3,
+                          boxShadow: "0 0 5px rgba(37,244,238,0.8)",
+                        }} />
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ color: "rgba(255,255,255,0.1)", fontSize: 18 }}>·</div>
+                  )}
+                </div>
+              );
+            });
+          })}
+        </div>
       </div>
     </div>
   );

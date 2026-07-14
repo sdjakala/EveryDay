@@ -16,6 +16,7 @@ type Props = {
   onMarkerClick?: (_id: string) => void;
   mapStyle?: string;
   focusIds?: string[] | null;
+  zoomToId?: string | null;
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -35,6 +36,7 @@ export default function TripMap({
   onMarkerClick,
   mapStyle = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
   focusIds,
+  zoomToId,
 }: Props) {
   const wrapperRef    = useRef<HTMLDivElement>(null);
   const containerRef  = useRef<HTMLDivElement>(null);
@@ -44,6 +46,7 @@ export default function TripMap({
   const clickPopupRef    = useRef<maplibregl.Popup | null>(null);
   const prevFocusIdsRef  = useRef<string[] | null | undefined>(undefined);
   const prevItemsRef     = useRef<typeof items | null>(null);
+  const prevZoomToIdRef  = useRef<string | null | undefined>(undefined);
   const [locating, setLocating]   = useState(false);
   const [locError, setLocError]   = useState<string | null>(null);
   const [is3D, setIs3D]           = useState(false);
@@ -199,6 +202,43 @@ export default function TripMap({
     if (mapRef.current.isStyleLoaded()) fit();
     else mapRef.current.once("load", fit);
   }, [focusIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Zoom driven by list-item selection (not map marker clicks) ────────────
+  useEffect(() => {
+    const prev = prevZoomToIdRef.current;
+    prevZoomToIdRef.current = zoomToId;
+
+    if (prev === undefined) return; // skip initial mount
+    if (!mapRef.current) return;
+
+    if (zoomToId) {
+      // Selected — fly to the item
+      const item = items.find((i) => i.id === zoomToId);
+      if (!item) return;
+      const fly = () => mapRef.current?.flyTo({ center: [item.lng, item.lat], zoom: 16, duration: 700 });
+      if (mapRef.current.isStyleLoaded()) fly();
+      else mapRef.current.once("load", fly);
+    } else if (prev) {
+      // Deselected — zoom back to the active city/date filter extent, or all items
+      const toFit =
+        focusIds && focusIds.length > 0
+          ? items.filter((i) => focusIds.includes(i.id))
+          : items;
+      if (toFit.length === 0) return;
+      const fit = () => {
+        if (toFit.length === 1) {
+          mapRef.current?.flyTo({ center: [toFit[0].lng, toFit[0].lat], zoom: 14, duration: 700 });
+        } else {
+          const b = new maplibregl.LngLatBounds();
+          toFit.forEach((i) => b.extend([i.lng, i.lat]));
+          mapRef.current?.fitBounds(b, { padding: 70, maxZoom: 14, duration: 700 });
+        }
+      };
+      if (mapRef.current.isStyleLoaded()) fit();
+      else mapRef.current.once("load", fit);
+    }
+  }, [zoomToId]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // ── Click popup (shows when item is highlighted) ──────────────────────────
   useEffect(() => {
