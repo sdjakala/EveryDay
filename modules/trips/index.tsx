@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import Modal from "../../components/Modal";
@@ -1218,9 +1219,24 @@ type ItemCardProps = {
 function ItemCard({ item, expanded, highlighted, sorted, mode, editMode, onToggle, onEdit, onDelete, onFullscreen }: ItemCardProps) {
   const TIcon = TYPE_ICON[item.type];
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerPos, setPickerPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+  const pickerBtnRef = useRef<HTMLButtonElement>(null);
   const [inlineTab, setInlineTab] = useState<"notes" | "directions">("notes");
   const otherItemsWithAddress = sorted.filter((i) => i.id !== item.id && !!i.address?.trim());
   const hasBoth = !!(item.description && item.directions);
+
+  function togglePicker() {
+    if (!pickerOpen && pickerBtnRef.current) {
+      const rect = pickerBtnRef.current.getBoundingClientRect();
+      const left = Math.min(rect.left, window.innerWidth - 248 - 8);
+      setPickerPos(
+        rect.top > 150
+          ? { bottom: window.innerHeight - rect.top + 4, left }
+          : { top: rect.bottom + 4, left }
+      );
+    }
+    setPickerOpen((p) => !p);
+  }
 
   return (
     <div style={{
@@ -1327,9 +1343,10 @@ function ItemCard({ item, expanded, highlighted, sorted, mode, editMode, onToggl
                     </button>
 
                     {/* Route from another itinerary item — picker */}
-                    <div style={{ position: "relative" }}>
+                    <div>
                       <button
-                        onClick={() => setPickerOpen((p) => !p)}
+                        ref={pickerBtnRef}
+                        onClick={togglePicker}
                         style={{
                           padding: "5px 10px", borderRadius: 8, fontSize: 12, cursor: "pointer",
                           background: pickerOpen ? "rgba(37,244,238,0.15)" : "rgba(37,244,238,0.08)",
@@ -1345,47 +1362,49 @@ function ItemCard({ item, expanded, highlighted, sorted, mode, editMode, onToggl
                         }} />
                       </button>
 
-                      {pickerOpen && (
-                        <div style={{
-                          position: "absolute", bottom: "calc(100% + 4px)", left: 0,
-                          background: "rgba(10,14,20,0.97)", backdropFilter: "blur(8px)",
-                          border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10,
-                          zIndex: 30, minWidth: 220, maxHeight: 220, overflowY: "auto",
-                          boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
-                        }}>
-                          {otherItemsWithAddress.length === 0 ? (
-                            <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--muted)" }}>
-                              No other items with addresses
-                            </div>
-                          ) : (
-                            otherItemsWithAddress.map((other) => {
-                              const OtherIcon = TYPE_ICON[other.type];
-                              return (
-                                <button
-                                  key={other.id}
-                                  onClick={() => {
-                                    openRoute(item.address!, other.address!, mode);
-                                    setPickerOpen(false);
-                                  }}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 9,
-                                    width: "100%", textAlign: "left", padding: "9px 14px",
-                                    background: "transparent", border: "none",
-                                    borderBottom: "1px solid rgba(255,255,255,0.05)",
-                                    cursor: "pointer", color: "#eef2f5", fontSize: 12,
-                                  }}
-                                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(37,244,238,0.07)")}
-                                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                >
-                                  <OtherIcon size={13} strokeWidth={1.75} style={{ flexShrink: 0, color: "rgba(255,255,255,0.45)" }} />
-                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {other.title}
-                                  </span>
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
+                      {pickerOpen && pickerPos && createPortal(
+                        <>
+                          <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setPickerOpen(false)} />
+                          <div style={{
+                            position: "fixed", ...pickerPos,
+                            width: 248,
+                            background: "rgba(10,14,20,0.97)", backdropFilter: "blur(8px)",
+                            border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10,
+                            zIndex: 9999, maxHeight: 220, overflowY: "auto",
+                            boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+                          }}>
+                            {otherItemsWithAddress.length === 0 ? (
+                              <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--muted)" }}>
+                                No other items with addresses
+                              </div>
+                            ) : (
+                              otherItemsWithAddress.map((other) => {
+                                const OtherIcon = TYPE_ICON[other.type];
+                                return (
+                                  <button
+                                    key={other.id}
+                                    onClick={() => { openRoute(item.address!, other.address!, mode); setPickerOpen(false); }}
+                                    style={{
+                                      display: "flex", alignItems: "center", gap: 9,
+                                      width: "100%", textAlign: "left", padding: "9px 14px",
+                                      background: "transparent", border: "none",
+                                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                                      cursor: "pointer", color: "#eef2f5", fontSize: 12,
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(37,244,238,0.07)")}
+                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                  >
+                                    <OtherIcon size={13} strokeWidth={1.75} style={{ flexShrink: 0, color: "rgba(255,255,255,0.45)" }} />
+                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      {other.title}
+                                    </span>
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
+                        </>,
+                        document.body
                       )}
                     </div>
                   </>
@@ -1553,9 +1572,24 @@ function ItemDetailModal({ item, sorted, mode, onClose, onEdit }: ItemDetailModa
   const TIcon = TYPE_ICON[item.type];
   const ModeIcon = MODE_ICON[mode];
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerPos, setPickerPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+  const pickerBtnRef = useRef<HTMLButtonElement>(null);
   const [detailTab, setDetailTab] = useState<"notes" | "directions">("notes");
   const otherItemsWithAddress = sorted.filter((i) => i.id !== item.id && !!i.address?.trim());
   const hasBoth = !!(item.description && item.directions);
+
+  function togglePicker() {
+    if (!pickerOpen && pickerBtnRef.current) {
+      const rect = pickerBtnRef.current.getBoundingClientRect();
+      const left = Math.min(rect.left, window.innerWidth - 260 - 8);
+      setPickerPos(
+        rect.top > 150
+          ? { bottom: window.innerHeight - rect.top + 4, left }
+          : { top: rect.bottom + 4, left }
+      );
+    }
+    setPickerOpen((p) => !p);
+  }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -1721,8 +1755,8 @@ function ItemDetailModal({ item, sorted, mode, onClose, onEdit }: ItemDetailModa
                   <Navigation size={13} strokeWidth={1.75} />
                   From my location
                 </button>
-                <div style={{ position: "relative" }}>
-                  <button onClick={() => setPickerOpen((p) => !p)} style={{
+                <div>
+                  <button ref={pickerBtnRef} onClick={togglePicker} style={{
                     padding: "7px 14px", borderRadius: 8, fontSize: 13, cursor: "pointer",
                     background: pickerOpen ? "rgba(37,244,238,0.15)" : "rgba(37,244,238,0.08)",
                     border: "1px solid rgba(37,244,238,0.2)",
@@ -1732,30 +1766,35 @@ function ItemDetailModal({ item, sorted, mode, onClose, onEdit }: ItemDetailModa
                     From item
                     <ChevronDown size={13} strokeWidth={2} style={{ transform: pickerOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
                   </button>
-                  {pickerOpen && (
-                    <div style={{
-                      position: "absolute", bottom: "calc(100% + 4px)", left: 0,
-                      background: "rgba(10,14,20,0.97)", backdropFilter: "blur(8px)",
-                      border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10,
-                      zIndex: 30, minWidth: 230, maxHeight: 220, overflowY: "auto",
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
-                    }}>
-                      {otherItemsWithAddress.length === 0 ? (
-                        <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--muted)" }}>No other items with addresses</div>
-                      ) : otherItemsWithAddress.map((other) => {
-                        const OtherIcon = TYPE_ICON[other.type];
-                        return (
-                          <button key={other.id} onClick={() => { openRoute(item.address!, other.address!, mode); setPickerOpen(false); }}
-                            style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left", padding: "9px 14px", background: "transparent", border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)", cursor: "pointer", color: "#eef2f5", fontSize: 13 }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(37,244,238,0.07)")}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                          >
-                            <OtherIcon size={13} strokeWidth={1.75} style={{ flexShrink: 0, color: "rgba(255,255,255,0.45)" }} />
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{other.title}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                  {pickerOpen && pickerPos && createPortal(
+                    <>
+                      <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setPickerOpen(false)} />
+                      <div style={{
+                        position: "fixed", ...pickerPos,
+                        width: 260,
+                        background: "rgba(10,14,20,0.97)", backdropFilter: "blur(8px)",
+                        border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10,
+                        zIndex: 9999, maxHeight: 240, overflowY: "auto",
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+                      }}>
+                        {otherItemsWithAddress.length === 0 ? (
+                          <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--muted)" }}>No other items with addresses</div>
+                        ) : otherItemsWithAddress.map((other) => {
+                          const OtherIcon = TYPE_ICON[other.type];
+                          return (
+                            <button key={other.id} onClick={() => { openRoute(item.address!, other.address!, mode); setPickerOpen(false); }}
+                              style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left", padding: "9px 14px", background: "transparent", border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)", cursor: "pointer", color: "#eef2f5", fontSize: 13 }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(37,244,238,0.07)")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                            >
+                              <OtherIcon size={13} strokeWidth={1.75} style={{ flexShrink: 0, color: "rgba(255,255,255,0.45)" }} />
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{other.title}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>,
+                    document.body
                   )}
                 </div>
               </div>
