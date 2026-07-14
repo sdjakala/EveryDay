@@ -43,6 +43,7 @@ export default function TripMap({
   const userMarkerRef = useRef<maplibregl.Marker | null>(null);
   const clickPopupRef    = useRef<maplibregl.Popup | null>(null);
   const prevFocusIdsRef  = useRef<string[] | null | undefined>(undefined);
+  const prevItemsRef     = useRef<typeof items | null>(null);
   const [locating, setLocating]   = useState(false);
   const [locError, setLocError]   = useState<string | null>(null);
   const [is3D, setIs3D]           = useState(false);
@@ -92,6 +93,9 @@ export default function TripMap({
 
   // ── Rebuild markers on data / highlight change ────────────────────────────
   useEffect(() => {
+    const itemsChanged = items !== prevItemsRef.current;
+    prevItemsRef.current = items;
+
     const build = () => {
       if (!mapRef.current) return;
 
@@ -153,7 +157,10 @@ export default function TripMap({
         hasPoints = true;
       });
 
-      if (hasPoints && !highlightedId) {
+      // Only auto-fit when the item list itself changes (initial load, trip switch).
+      // Don't re-fit when just the highlight changes — that would override the
+      // active city/date filter zoom whenever the user selects or deselects an item.
+      if (hasPoints && itemsChanged) {
         mapRef.current.fitBounds(bounds, { padding: 70, maxZoom: 14, duration: 800 });
       }
     };
@@ -162,15 +169,6 @@ export default function TripMap({
     else mapRef.current?.once("load", build);
   }, [items, highlightedId, onMarkerClick]);
 
-  // ── Fly to highlighted item ───────────────────────────────────────────────
-  useEffect(() => {
-    if (!mapRef.current || !highlightedId) return;
-    const item = items.find((i) => i.id === highlightedId);
-    if (!item) return;
-    const fly = () => mapRef.current?.flyTo({ center: [item.lng, item.lat], zoom: 16, duration: 700 });
-    if (mapRef.current.isStyleLoaded()) fly();
-    else mapRef.current.once("load", fly);
-  }, [highlightedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Zoom to focused day ───────────────────────────────────────────────────
   useEffect(() => {
