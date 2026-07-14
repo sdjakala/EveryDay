@@ -33,6 +33,7 @@ type TripItem = {
   endTime?: string;
   address?: string;
   description?: string;
+  directions?: string;
   links: TripLink[];
   confirmationCode?: string;
   lat?: number;
@@ -166,17 +167,29 @@ function openRoute(destination: string, origin: string | "geo", mode: TransportM
 
 
 
+// Returns distance in km between two lat/lng points (Haversine approximation)
+function kmBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function extractUniqueCities(items: TripItem[]): { key: string; city: string; country: string; lat: number; lng: number }[] {
-  const seen = new Map<string, { city: string; country: string; lat: number; lng: number }>();
+  const seen: { city: string; country: string; lat: number; lng: number }[] = [];
   for (const item of items) {
     if (item.geocodedCity && item.lat != null && item.lng != null) {
-      const key = `${item.geocodedCity}::${item.geocodedCountry || ""}`.toLowerCase();
-      if (!seen.has(key)) {
-        seen.set(key, { city: item.geocodedCity, country: item.geocodedCountry || "", lat: item.lat, lng: item.lng });
+      // Treat cities within 20 km as the same location (handles Roma vs Rome etc.)
+      const nearby = seen.find((s) => kmBetween(s.lat, s.lng, item.lat!, item.lng!) < 20);
+      if (!nearby) {
+        seen.push({ city: item.geocodedCity, country: item.geocodedCountry || "", lat: item.lat, lng: item.lng });
       }
     }
   }
-  return [...seen.entries()].map(([key, v]) => ({ key, ...v }));
+  return seen.map((v) => ({ key: `${v.city}::${v.country}`.toLowerCase(), ...v }));
 }
 
 // ─── Default form values ──────────────────────────────────────────────────────
@@ -191,6 +204,7 @@ const defaultItemForm = {
   address: "",
   city: "",
   description: "",
+  directions: "",
   confirmationCode: "",
   links: [] as TripLink[],
 };
@@ -234,6 +248,7 @@ export default function TripPlannerModule() {
   const [focusDate, setFocusDate] = useState<string | null>(null);
   const [focusCity, setFocusCity] = useState<string | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   const [tripModal, setTripModal] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
@@ -247,7 +262,41 @@ export default function TripPlannerModule() {
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherFetchedFor, setWeatherFetchedFor] = useState<string | null>(null);
 
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingSync, setPendingSync] = useState(0);
+  const [justSynced, setJustSynced] = useState(false);
+
   useEffect(() => { fetchTrips(); }, []);
+
+  // Track online/offline state and SW messages
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+
+    function handleOnline()  { setIsOnline(true); }
+    function handleOffline() { setIsOnline(false); }
+    window.addEventListener("online",  handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    function handleSWMessage(e: MessageEvent) {
+      if (e.data?.type === "PENDING_COUNT") setPendingSync(e.data.count);
+      if (e.data?.type === "TRIPS_SYNCED") {
+        setPendingSync(0);
+        setJustSynced(true);
+        fetchTrips(); // refresh with authoritative server data
+        setTimeout(() => setJustSynced(false), 3000);
+      }
+    }
+    navigator.serviceWorker?.addEventListener("message", handleSWMessage);
+
+    // Ask SW for current pending count on mount
+    navigator.serviceWorker?.controller?.postMessage({ type: "GET_PENDING_COUNT" });
+
+    return () => {
+      window.removeEventListener("online",  handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      navigator.serviceWorker?.removeEventListener("message", handleSWMessage);
+    };
+  }, []);
 
   // Fetch weather when switching to weather tab
   useEffect(() => {
@@ -424,6 +473,7 @@ export default function TripPlannerModule() {
     setHighlightedItemId(null);
     setFocusDate(null);
     setFocusCity(null);
+    setEditMode(false);
   }
 
   // ── Derived data (all hooks before any early return) ─────────────────────────
@@ -489,6 +539,25 @@ export default function TripPlannerModule() {
   return (
     <div style={{ width: "100%" }}>
 
+      {/* ── Offline / sync status banner ───────────────────────────────────── */}
+      {(!isOnline || pendingSync > 0 || justSynced) && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "7px 12px", borderRadius: 8, marginBottom: 10, fontSize: 12,
+          background: justSynced
+            ? "rgba(37,244,238,0.08)"
+            : (!isOnline ? "rgba(255,180,0,0.08)" : "rgba(132,86,255,0.08)"),
+          border: `1px solid ${justSynced ? "rgba(37,244,238,0.25)" : (!isOnline ? "rgba(255,180,0,0.25)" : "rgba(132,86,255,0.25)")}`,
+          color: justSynced ? "var(--accent-start)" : (!isOnline ? "#ffb400" : "#c4b0ff"),
+        }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: "currentColor" }} />
+          {justSynced && "Changes synced"}
+          {!justSynced && !isOnline && pendingSync === 0 && "Offline — showing cached data"}
+          {!justSynced && !isOnline && pendingSync > 0 && `Offline — ${pendingSync} change${pendingSync > 1 ? "s" : ""} will sync when reconnected`}
+          {!justSynced && isOnline  && pendingSync > 0 && "Syncing changes…"}
+        </div>
+      )}
+
       {/* ── Collapsible header ─────────────────────────────────────────────── */}
       {!headerCollapsed && (
         <>
@@ -507,7 +576,9 @@ export default function TripPlannerModule() {
             {selectedTrip && (
               <>
                 <button className="cal-btn" onClick={() => openTripModal(selectedTrip)} style={{ fontSize: 12, padding: "5px 10px" }}>Edit</button>
-                <button className="workout-action-btn danger" onClick={() => deleteTrip(selectedTrip.id)} title="Delete trip">×</button>
+                {editMode && (
+                  <button className="workout-action-btn danger" onClick={() => deleteTrip(selectedTrip.id)} title="Delete trip">×</button>
+                )}
               </>
             )}
             <button className="workout-create-btn" onClick={() => openTripModal()} style={{ fontSize: 12, padding: "5px 10px" }}>
@@ -587,7 +658,23 @@ export default function TripPlannerModule() {
           {/* ── Itinerary tab ─────────────────────────────────────────────── */}
           {tab === "itinerary" && (
             <>
-              <ModeToggle mode={mode} setMode={setMode} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <ModeToggle mode={mode} setMode={setMode} />
+                <button
+                  onClick={() => setEditMode((e) => !e)}
+                  style={{
+                    fontSize: 12, padding: "5px 10px", borderRadius: 8,
+                    border: "none",
+                    background: editMode
+                      ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)"
+                      : "rgba(255,255,255,0.07)",
+                    color: editMode ? "#071018" : "var(--muted)",
+                    fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  {editMode ? "Done" : "Edit"}
+                </button>
+              </div>
 
               <div style={{ maxHeight: 520, overflowY: "auto", paddingRight: 2 }}>
                 {days.length === 0 ? (
@@ -607,6 +694,7 @@ export default function TripPlannerModule() {
                             highlighted={highlightedItemId === item.id}
                             sorted={sorted}
                             mode={mode}
+                            editMode={editMode}
                             onToggle={() => handleItemClick(item)}
                             onEdit={() => openItemModal(item)}
                             onDelete={() => deleteItem(item.id)}
@@ -788,21 +876,9 @@ export default function TripPlannerModule() {
                   No cities found. Add addresses to itinerary items to see weather.
                 </div>
               )}
-              {!weatherLoading && cityWeather.map((cw) => {
-                const tripDates = new Set(
-                  (selectedTrip?.items ?? [])
-                    .filter((i) => i.geocodedCity?.toLowerCase() === cw.city.toLowerCase())
-                    .map((i) => i.date)
-                    .filter(Boolean)
-                );
-                return (
-                  <CityWeatherCard
-                    key={`${cw.city}-${cw.country}`}
-                    cw={cw}
-                    tripDates={tripDates}
-                  />
-                );
-              })}
+              {!weatherLoading && cityWeather.length > 0 && (
+                <WeatherGrid cityWeather={cityWeather} tripItems={selectedTrip?.items ?? []} />
+              )}
             </div>
           )}
         </>
@@ -902,6 +978,7 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
             endTime: editingItem.endTime || "", address: editingItem.address || "",
             city: editingItem.geocodedCity || "",
             description: editingItem.description || "",
+            directions: editingItem.directions || "",
             confirmationCode: editingItem.confirmationCode || "",
             links: editingItem.links || [] }
         : defaultItemForm
@@ -1044,6 +1121,17 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
           onChange={(e) => setItemForm((f) => ({ ...f, description: e.target.value }))}
         />
 
+        <label style={labelStyle}>
+          Directions
+          <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 6 }}>(markdown supported)</span>
+        </label>
+        <textarea
+          style={{ ...inputStyle, minHeight: 120, resize: "vertical", fontFamily: "monospace", fontSize: 13, lineHeight: 1.6 }}
+          placeholder={"Step-by-step directions, transit notes, etc.\n\n- Take vaporetto line 1 from Piazzale Roma\n- Exit at San Marco"}
+          value={itemForm.directions}
+          onChange={(e) => setItemForm((f) => ({ ...f, directions: e.target.value }))}
+        />
+
         <label style={labelStyle}>Links</label>
         {itemForm.links.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
@@ -1120,16 +1208,19 @@ type ItemCardProps = {
   highlighted: boolean;
   sorted: TripItem[];
   mode: TransportMode;
+  editMode: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onFullscreen: () => void;
 };
 
-function ItemCard({ item, expanded, highlighted, sorted, mode, onToggle, onEdit, onDelete, onFullscreen }: ItemCardProps) {
+function ItemCard({ item, expanded, highlighted, sorted, mode, editMode, onToggle, onEdit, onDelete, onFullscreen }: ItemCardProps) {
   const TIcon = TYPE_ICON[item.type];
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [inlineTab, setInlineTab] = useState<"notes" | "directions">("notes");
   const otherItemsWithAddress = sorted.filter((i) => i.id !== item.id && !!i.address?.trim());
+  const hasBoth = !!(item.description && item.directions);
 
   return (
     <div style={{
@@ -1162,7 +1253,7 @@ function ItemCard({ item, expanded, highlighted, sorted, mode, onToggle, onEdit,
         <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
           <button className="workout-action-btn" title="View full details" onClick={onFullscreen}><Expand size={12} strokeWidth={1.75} /></button>
           <button className="workout-action-btn" title="Edit" onClick={onEdit}><Icon name="edit" size={12} /></button>
-          <button className="workout-action-btn danger" title="Delete" onClick={onDelete}>×</button>
+          {editMode && <button className="workout-action-btn danger" title="Delete" onClick={onDelete}>×</button>}
         </div>
       </div>
 
@@ -1176,11 +1267,30 @@ function ItemCard({ item, expanded, highlighted, sorted, mode, onToggle, onEdit,
             </div>
           )}
 
-          {item.description && (
-            <div className="trip-markdown">
-              <ReactMarkdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>
-                {item.description}
-              </ReactMarkdown>
+          {(item.description || item.directions) && (
+            <div>
+              {hasBoth && (
+                <div style={{ display: "flex", gap: 4, marginTop: 8, marginBottom: 6 }}>
+                  {(["notes", "directions"] as const).map((t) => (
+                    <button key={t} onClick={() => setInlineTab(t)} style={{
+                      fontSize: 11, padding: "3px 10px", borderRadius: 6, cursor: "pointer",
+                      border: "none",
+                      background: inlineTab === t ? "rgba(37,244,238,0.15)" : "rgba(255,255,255,0.05)",
+                      color: inlineTab === t ? "var(--accent-start)" : "var(--muted)",
+                      fontWeight: inlineTab === t ? 700 : 400,
+                    }}>
+                      {t === "notes" ? "Notes" : "Directions"}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="trip-markdown">
+                <ReactMarkdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>
+                  {hasBoth
+                    ? (inlineTab === "notes" ? item.description! : item.directions!)
+                    : (item.description || item.directions)!}
+                </ReactMarkdown>
+              </div>
             </div>
           )}
 
@@ -1289,87 +1399,142 @@ function ItemCard({ item, expanded, highlighted, sorted, mode, onToggle, onEdit,
   );
 }
 
-function CityWeatherCard({ cw, tripDates }: { cw: CityWeather; tripDates: Set<string> }) {
-  return (
-    <div style={{
-      marginBottom: 14, borderRadius: 12, overflow: "hidden",
-      background: "linear-gradient(135deg,rgba(37,244,238,0.05),rgba(132,86,255,0.05))",
-      border: "1px solid rgba(37,244,238,0.12)",
-    }}>
-      {/* City header */}
-      <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>{cw.city}</div>
-          {cw.country && <div style={{ fontSize: 11, color: "var(--muted)" }}>{cw.country}</div>}
-        </div>
-        {cw.currentTemp != null && (
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{Math.round(cw.currentTemp)}°</div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{cw.currentCondition}</div>
-          </div>
-        )}
-      </div>
+function WeatherGrid({ cityWeather, tripItems }: { cityWeather: CityWeather[]; tripItems: TripItem[] }) {
+  const allDates = Array.from(
+    new Set(cityWeather.flatMap((cw) => cw.daily.map((d) => d.date)))
+  ).sort();
 
-      {/* Forecast strip — horizontally scrollable */}
-      {cw.daily.length > 0 && (
-        <div style={{ display: "flex", overflowX: "auto", padding: "10px 8px", gap: 4 }}
-             className="trip-weather-scroll"
-        >
-          {cw.daily.map((day) => {
-            const hasEvent = tripDates.has(day.date);
-            return (
-              <div
-                key={day.date}
-                style={{
-                  textAlign: "center", borderRadius: 8, padding: "6px 4px",
-                  flexShrink: 0, width: 62,
-                  background: hasEvent ? "rgba(37,244,238,0.1)" : "transparent",
-                  border: hasEvent ? "1px solid rgba(37,244,238,0.35)" : "1px solid transparent",
-                  position: "relative",
-                }}
-              >
-                {(() => {
-                  const d = new Date(day.date + "T12:00:00");
-                  return (
-                    <div style={{ marginBottom: 4 }}>
-                      <div style={{
-                        fontSize: 10, fontWeight: 700, lineHeight: 1.2,
-                        color: hasEvent ? "var(--accent-start)" : "var(--muted)",
-                        letterSpacing: hasEvent ? "0.03em" : undefined,
-                      }}>
-                        {d.toLocaleDateString("en-US", { weekday: "short" })}
-                      </div>
-                      <div style={{ fontSize: 9, color: hasEvent ? "rgba(37,244,238,0.65)" : "rgba(255,255,255,0.25)", lineHeight: 1.2 }}>
-                        {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                      </div>
-                    </div>
-                  );
-                })()}
-                {day.icon && (
-                  <img src={day.icon} alt={day.condition} style={{ width: 28, height: 28, margin: "0 auto 2px", display: "block" }} />
-                )}
-                <div style={{ fontSize: 11, color: "#fff", fontWeight: 600 }}>
-                  {day.high != null ? `${Math.round(day.high)}°` : "–"}
+  const forecastByCity = new Map(
+    cityWeather.map((cw) => [cw.city.toLowerCase(), new Map(cw.daily.map((d) => [d.date, d]))])
+  );
+  const tripDatesByCity = new Map(
+    cityWeather.map((cw) => [
+      cw.city.toLowerCase(),
+      new Set(
+        tripItems
+          .filter((i) => i.geocodedCity?.toLowerCase() === cw.city.toLowerCase())
+          .map((i) => i.date)
+          .filter(Boolean) as string[]
+      ),
+    ])
+  );
+
+  const CITY_COL = 110;
+  const DAY_COL  = 62;
+  // Single grid column definition — shared by header + every city row
+  const gridCols = `${CITY_COL}px repeat(${allDates.length}, ${DAY_COL}px)`;
+
+  // Shared cell border colour
+  const rowBorder = "1px solid rgba(37,244,238,0.13)";
+  const rowBg     = "rgba(255,255,255,0.025)";
+
+  return (
+    <div style={{ overflowX: "auto", paddingTop: 12 }} className="trip-weather-scroll">
+      {/* Flat grid — one definition, all rows aligned automatically */}
+      <div style={{ display: "grid", gridTemplateColumns: gridCols, rowGap: 6 }}>
+
+        {/* ── Date header ─────────────────────────────────────────────── */}
+        {/* Sticky spacer — transparent so it blends with the card background */}
+        <div style={{
+          position: "sticky", left: 0, zIndex: 2,
+          background: "transparent", paddingBottom: 4,
+        }} />
+        {allDates.map((date) => {
+          const d = new Date(date + "T12:00:00");
+          return (
+            <div key={date} style={{ textAlign: "center", paddingBottom: 4 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.5)", letterSpacing: "0.05em" }}>
+                {d.toLocaleDateString("en-US", { weekday: "short" })}
+              </div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>
+                {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* ── City rows ───────────────────────────────────────────────── */}
+        {cityWeather.map((cw) => {
+          const key    = cw.city.toLowerCase();
+          const fcMap  = forecastByCity.get(key)!;
+          const tDates = tripDatesByCity.get(key)!;
+          const n      = allDates.length;
+
+          return (
+            <React.Fragment key={cw.city}>
+              {/* City label — sticky left */}
+              <div style={{
+                position: "sticky", left: 0, zIndex: 1,
+                background: "#0d1b26",
+                border: rowBorder, borderRight: "none",
+                padding: "8px 10px",
+                display: "flex", flexDirection: "column", justifyContent: "center",
+              }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {cw.city}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                  {day.low != null ? `${Math.round(day.low)}°` : "–"}
-                </div>
-                {day.precipProbability > 0 && (
-                  <div style={{ fontSize: 10, color: "rgba(37,244,238,0.7)", marginTop: 2 }}>{day.precipProbability}%</div>
+                {cw.currentTemp != null && (
+                  <div style={{ fontSize: 17, fontWeight: 700, color: "var(--accent-start)", lineHeight: 1.1, marginTop: 2 }}>
+                    {Math.round(cw.currentTemp)}°
+                    <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted)", marginLeft: 4 }}>now</span>
+                  </div>
                 )}
-                {hasEvent && (
-                  <div style={{
-                    width: 5, height: 5, borderRadius: "50%",
-                    background: "var(--accent-start)",
-                    margin: "4px auto 0",
-                    boxShadow: "0 0 6px rgba(37,244,238,0.8)",
-                  }} />
+                {cw.currentCondition && (
+                  <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {cw.currentCondition}
+                  </div>
                 )}
               </div>
-            );
-          })}
-        </div>
-      )}
+
+              {/* Day cells */}
+              {allDates.map((date, i) => {
+                const day      = fcMap.get(date);
+                const hasEvent = tDates.has(date);
+                const isLast   = i === n - 1;
+                return (
+                  <div key={date} style={{
+                    textAlign: "center", padding: "6px 2px",
+                    background: hasEvent ? "rgba(37,244,238,0.07)" : rowBg,
+                    borderTop: rowBorder, borderBottom: rowBorder,
+                    borderRight: isLast ? rowBorder : "none",
+                    borderLeft: "1px solid rgba(255,255,255,0.05)",
+                  }}>
+                    {day ? (
+                      <>
+                        {day.icon && (
+                          <img src={day.icon} alt={day.condition}
+                            style={{ width: 28, height: 28, margin: "0 auto 2px", display: "block" }} />
+                        )}
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#fff" }}>
+                          {day.high != null ? `${Math.round(day.high)}°` : "–"}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                          {day.low != null ? `${Math.round(day.low)}°` : "–"}
+                        </div>
+                        {day.precipProbability > 0 && (
+                          <div style={{ fontSize: 9, color: "rgba(37,244,238,0.7)", marginTop: 1 }}>
+                            {day.precipProbability}%
+                          </div>
+                        )}
+                        {hasEvent && (
+                          <div style={{
+                            width: 4, height: 4, borderRadius: "50%",
+                            background: "var(--accent-start)",
+                            margin: "3px auto 0",
+                            boxShadow: "0 0 5px rgba(37,244,238,0.8)",
+                          }} />
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ color: "rgba(255,255,255,0.1)", fontSize: 18, lineHeight: "60px" }}>·</div>
+                    )}
+                  </div>
+                );
+              })}
+            </React.Fragment>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1388,7 +1553,9 @@ function ItemDetailModal({ item, sorted, mode, onClose, onEdit }: ItemDetailModa
   const TIcon = TYPE_ICON[item.type];
   const ModeIcon = MODE_ICON[mode];
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<"notes" | "directions">("notes");
   const otherItemsWithAddress = sorted.filter((i) => i.id !== item.id && !!i.address?.trim());
+  const hasBoth = !!(item.description && item.directions);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -1483,15 +1650,35 @@ function ItemDetailModal({ item, sorted, mode, onClose, onEdit }: ItemDetailModa
             </div>
           )}
 
-          {/* Notes / Description */}
-          {item.description && (
+          {/* Notes / Directions */}
+          {(item.description || item.directions) && (
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-                Notes
-              </div>
+              {hasBoth ? (
+                <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 0 }}>
+                  {(["notes", "directions"] as const).map((t) => (
+                    <button key={t} onClick={() => setDetailTab(t)} style={{
+                      fontSize: 12, padding: "6px 14px", borderRadius: "8px 8px 0 0",
+                      cursor: "pointer", border: "none",
+                      background: detailTab === t ? "rgba(37,244,238,0.1)" : "transparent",
+                      color: detailTab === t ? "var(--accent-start)" : "var(--muted)",
+                      fontWeight: detailTab === t ? 700 : 400,
+                      borderBottom: detailTab === t ? "2px solid var(--accent-start)" : "2px solid transparent",
+                      marginBottom: -1,
+                    }}>
+                      {t === "notes" ? "Notes" : "Directions"}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                  {item.description ? "Notes" : "Directions"}
+                </div>
+              )}
               <div className="trip-markdown trip-markdown-detail">
                 <ReactMarkdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>
-                  {item.description}
+                  {hasBoth
+                    ? (detailTab === "notes" ? item.description! : item.directions!)
+                    : (item.description || item.directions)!}
                 </ReactMarkdown>
               </div>
             </div>

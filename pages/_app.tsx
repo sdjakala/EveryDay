@@ -44,6 +44,14 @@ export default function App({ Component, pageProps }: AppProps) {
   useEffect(() => {
     registerServiceWorker();
     checkForUpdates();
+
+    // When connectivity is restored, tell the SW to replay queued mutations.
+    // This is the fallback for Safari which doesn't support the Background Sync API.
+    function notifySWOnline() {
+      navigator.serviceWorker?.controller?.postMessage({ type: "ONLINE" });
+    }
+    window.addEventListener("online", notifySWOnline);
+    return () => window.removeEventListener("online", notifySWOnline);
   }, []);
 
   return (
