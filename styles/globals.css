@@ -36,7 +36,7 @@ body {
   flex-direction: column;
 }
 .topbar {
-  height: 64px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -107,6 +107,10 @@ body {
 .module-card p {
   margin: 0;
   color: var(--muted);
+}
+.module-card.header-hidden > h3,
+.module-card.header-hidden > p {
+  display: none;
 }
 
 /* Headings */

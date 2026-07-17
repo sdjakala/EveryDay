@@ -268,7 +268,43 @@ export default function TripPlannerModule() {
   const [pendingSync, setPendingSync] = useState(0);
   const [justSynced, setJustSynced] = useState(false);
 
+  // Ref on the sticky map+filter block; measured bottom drives the items list height.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const mapPanelRef = useRef<HTMLDivElement>(null);
+  const [listTop, setListTop] = useState(434);
+
   useEffect(() => { fetchTrips(); }, []);
+
+  // Lock body scroll on the map tab so the page cannot scroll at all —
+  // only the items list scrolls internally.
+  // Also toggle a class on the .module-card parent to hide its title/description.
+  useEffect(() => {
+    const card = rootRef.current?.closest(".module-card") as HTMLElement | null;
+    card?.classList.add("header-hidden");
+    if (tab !== "map") {
+      document.body.style.overflow = "";
+      return;
+    }
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+      card?.classList.remove("header-hidden");
+    };
+  }, [tab]);
+
+  // Measure the sticky map panel bottom after every render so the items list
+  // height fills exactly the remaining viewport. No dep array means it always
+  // re-measures after city filter pills appear (they load after trip data).
+  // The functional setState comparison prevents infinite re-render loops.
+  useEffect(() => {
+    if (tab !== "map" || !mapPanelRef.current) return;
+    const el = mapPanelRef.current;
+    const id = requestAnimationFrame(() => {
+      const bottom = Math.round(el.getBoundingClientRect().bottom);
+      setListTop(prev => (prev === bottom ? prev : bottom));
+    });
+    return () => cancelAnimationFrame(id);
+  });
 
   // Track online/offline state and SW messages
   useEffect(() => {
@@ -540,7 +576,7 @@ export default function TripPlannerModule() {
   if (loading) return <div style={{ color: "var(--muted)", padding: 12 }}>Loading trips…</div>;
 
   return (
-    <div style={{ width: "100%" }}>
+    <div ref={rootRef} style={{ width: "100%" }}>
 
       {/* ── Offline / sync status banner ───────────────────────────────────── */}
       {(!isOnline || pendingSync > 0 || justSynced) && (
@@ -614,7 +650,7 @@ export default function TripPlannerModule() {
         <>
           {/* ── Tabs — sticky below the global topbar ─────────────────────── */}
           <div style={{
-            position: "sticky", top: 64, zIndex: 10,
+            position: "sticky", top: 48, zIndex: 10,
             margin: "0 -12px", padding: "8px 12px 10px",
             background: "rgba(15,15,16,0.92)", backdropFilter: "blur(10px)",
             borderBottom: "1px solid rgba(255,255,255,0.05)",
@@ -623,7 +659,7 @@ export default function TripPlannerModule() {
             {(["itinerary", "map", "weather"] as Tab[]).map((t) => (
               <button
                 key={t}
-                onClick={() => setTab(t)}
+                onClick={() => { setTab(t); if (t === "map") setHeaderCollapsed(true); }}
                 style={{
                   padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
                   cursor: "pointer", textTransform: "capitalize",
@@ -719,156 +755,180 @@ export default function TripPlannerModule() {
           {/* ── Map tab ───────────────────────────────────────────────────── */}
           {tab === "map" && (
             <>
-              {/* Map style picker */}
-              <div style={{ display: "flex", gap: 4, marginBottom: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: "var(--muted)", marginRight: 2 }}>Style:</span>
-                {MAP_STYLES.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setMapStyle(s.url)}
-                    style={{
-                      padding: "4px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                      background: mapStyle === s.url ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
-                      border: "none",
-                      boxShadow: mapStyle === s.url ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.08)",
-                      color: mapStyle === s.url ? "#071018" : "var(--muted)",
-                    }}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-
-              {mapMarkers.length === 0 ? (
-                <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "2rem 0" }}>
-                  No geocoded locations yet — add addresses to your itinerary items.
-                </div>
-              ) : (
-                <div style={{ height: 320, marginBottom: 12, borderRadius: 12, overflow: "hidden" }}>
-                  <TripMap items={mapMarkers} highlightedId={highlightedItemId} onMarkerClick={handleMarkerClick} mapStyle={mapStyle} focusIds={focusIds} zoomToId={mapZoomToId} />
-                </div>
-              )}
-
-              <ModeToggle mode={mode} setMode={setMode} compact />
-
-              {/* City filter pills — only shown when trip spans multiple cities */}
-              {uniqueMapCities.length > 1 && (
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8, marginTop: 4 }}>
-                  <button
-                    onClick={() => { setFocusCity(null); setFocusDate(null); }}
-                    style={{
-                      padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                      background: !focusCity ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
-                      border: "none",
-                      boxShadow: !focusCity ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.1)",
-                      color: !focusCity ? "#071018" : "var(--muted)",
-                    }}
-                  >
-                    All
-                  </button>
-                  {uniqueMapCities.map(({ city, count }) => {
-                    const active = focusCity?.toLowerCase() === city.toLowerCase();
-                    return (
+              {/* Single sticky block: style picker + map + city filter.
+                  A ref measures its rendered bottom edge; the items list uses
+                  that measurement so it fills exactly the remaining viewport. */}
+              <div
+                ref={mapPanelRef}
+                style={{
+                  position: "sticky", top: 94, zIndex: 9,
+                  margin: "0 -12px",
+                  background: "rgba(15,15,16,0.97)", backdropFilter: "blur(10px)",
+                }}
+              >
+                {/* Style picker */}
+                <div style={{ padding: "8px 12px 0" }}>
+                  <div style={{ display: "flex", gap: 4, marginBottom: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: "var(--muted)", marginRight: 2 }}>Style:</span>
+                    {MAP_STYLES.map((s) => (
                       <button
-                        key={city}
-                        onClick={() => { setFocusCity(active ? null : city); setFocusDate(null); }}
+                        key={s.id}
+                        onClick={() => setMapStyle(s.url)}
                         style={{
-                          padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                          background: active ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
+                          padding: "4px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                          background: mapStyle === s.url ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
                           border: "none",
-                          boxShadow: active ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.1)",
-                          color: active ? "#071018" : "var(--muted)",
+                          boxShadow: mapStyle === s.url ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.08)",
+                          color: mapStyle === s.url ? "#071018" : "var(--muted)",
                         }}
                       >
-                        {city}
-                        <span style={{ opacity: 0.65, marginLeft: 4 }}>{count}</span>
+                        {s.label}
                       </button>
+                    ))}
+                  </div>
+
+                  {mapMarkers.length === 0 ? (
+                    <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "2rem 0" }}>
+                      No geocoded locations yet — add addresses to your itinerary items.
+                    </div>
+                  ) : (
+                    <div style={{ height: 300, borderRadius: 12, overflow: "hidden" }}>
+                      <TripMap items={mapMarkers} highlightedId={highlightedItemId} onMarkerClick={handleMarkerClick} mapStyle={mapStyle} focusIds={focusIds} zoomToId={mapZoomToId} />
+                    </div>
+                  )}
+                </div>
+
+                {/* City filter pills — part of the sticky block so height is measured together */}
+                {uniqueMapCities.length > 1 && (
+                  <div style={{
+                    padding: "6px 12px",
+                    borderTop: "1px solid rgba(255,255,255,0.06)",
+                  }}>
+                    <div style={{
+                      display: "flex", gap: 5,
+                      overflowX: "auto", WebkitOverflowScrolling: "touch" as any,
+                      scrollbarWidth: "none",
+                    }}>
+                      <button
+                        onClick={() => { setFocusCity(null); setFocusDate(null); }}
+                        style={{
+                          flexShrink: 0,
+                          padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                          background: !focusCity ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
+                          border: "none",
+                          boxShadow: !focusCity ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.1)",
+                          color: !focusCity ? "#071018" : "var(--muted)",
+                        }}
+                      >
+                        All
+                      </button>
+                      {uniqueMapCities.map(({ city, count }) => {
+                        const active = focusCity?.toLowerCase() === city.toLowerCase();
+                        return (
+                          <button
+                            key={city}
+                            onClick={() => { setFocusCity(active ? null : city); setFocusDate(null); }}
+                            style={{
+                              flexShrink: 0,
+                              padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                              background: active ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)" : "rgba(255,255,255,0.05)",
+                              border: "none",
+                              boxShadow: active ? "none" : "inset 0 0 0 1px rgba(255,255,255,0.1)",
+                              color: active ? "#071018" : "var(--muted)",
+                            }}
+                          >
+                            {city}
+                            <span style={{ opacity: 0.65, marginLeft: 4 }}>{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Scrollable items — body scroll is locked on the map tab so this
+                  div is the only thing that scrolls. Height fills the remaining
+                  viewport below the measured map+filter panel. */}
+              <div style={{
+                height: `calc(100dvh - ${listTop}px - 64px)`,
+                overflowY: "auto", WebkitOverflowScrolling: "touch" as any,
+                margin: "0 -12px",
+                padding: "8px 12px 36px",
+              }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  {Array.from(itemsByDate.entries()).map(([date, dateItems]) => {
+                    const geocodedIds = dateItems.filter((i) => i.lat != null).map((i) => i.id);
+                    const isFocused = focusDate === date;
+                    const canFocus = geocodedIds.length > 0;
+                    return (
+                      <React.Fragment key={date}>
+                        <div
+                          onClick={() => canFocus && setFocusDate(isFocused ? null : date)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "6px 6px 5px", marginTop: 4,
+                            borderBottom: "1px solid " + (isFocused ? "rgba(37,244,238,0.25)" : "rgba(255,255,255,0.07)"),
+                            cursor: canFocus ? "pointer" : "default",
+                          }}
+                        >
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
+                            color: isFocused ? "var(--accent-start)" : "rgba(255,255,255,0.35)",
+                          }}>
+                            {formatMapDate(date)}
+                          </span>
+                          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.18)", marginLeft: "auto" }}>
+                            {dateItems.length} item{dateItems.length !== 1 ? "s" : ""}
+                          </span>
+                          {canFocus && (
+                            <ZoomIn size={11} strokeWidth={2} style={{
+                              color: isFocused ? "var(--accent-start)" : "rgba(255,255,255,0.18)", flexShrink: 0,
+                            }} />
+                          )}
+                        </div>
+
+                        {dateItems.map((item) => {
+                          const TIcon = TYPE_ICON[item.type];
+                          const isHighlighted = highlightedItemId === item.id;
+                          return (
+                            <div
+                              key={item.id}
+                              onClick={() => {
+                                const next = highlightedItemId === item.id ? null : item.id;
+                                setHighlightedItemId(next);
+                                setMapZoomToId(next);
+                              }}
+                              style={{
+                                display: "flex", gap: 8, alignItems: "center", padding: "8px 10px",
+                                borderRadius: 8, cursor: "pointer",
+                                background: isHighlighted ? "rgba(37,244,238,0.08)" : "rgba(255,255,255,0.03)",
+                                border: "1px solid " + (isHighlighted ? "rgba(37,244,238,0.3)" : "rgba(255,255,255,0.06)"),
+                                transition: "all 0.15s",
+                              }}
+                            >
+                              <TIcon size={14} strokeWidth={1.75} style={{ flexShrink: 0, color: isHighlighted ? "var(--accent-start)" : "var(--muted)" }} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: isHighlighted ? "#fff" : "#eef2f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {item.title}
+                                </div>
+                                {item.address && (
+                                  <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {item.address}
+                                  </div>
+                                )}
+                              </div>
+                              {item.lat == null && (
+                                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", flexShrink: 0 }}>no coords</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </React.Fragment>
                     );
                   })}
                 </div>
-              )}
-
-              <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, paddingRight: 2 }}>
-                {Array.from(itemsByDate.entries()).map(([date, dateItems]) => {
-                  const geocodedIds = dateItems.filter((i) => i.lat != null).map((i) => i.id);
-                  const isFocused = focusDate === date;
-                  const canFocus = geocodedIds.length > 0;
-                  return (
-                    <React.Fragment key={date}>
-                      {/* Date header */}
-                      <div
-                        onClick={() => canFocus && setFocusDate(isFocused ? null : date)}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 6,
-                          padding: "6px 6px 5px",
-                          marginTop: 4,
-                          borderBottom: "1px solid " + (isFocused ? "rgba(37,244,238,0.25)" : "rgba(255,255,255,0.07)"),
-                          cursor: canFocus ? "pointer" : "default",
-                        }}
-                      >
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, letterSpacing: "0.06em",
-                          textTransform: "uppercase",
-                          color: isFocused ? "var(--accent-start)" : "rgba(255,255,255,0.35)",
-                        }}>
-                          {formatMapDate(date)}
-                        </span>
-                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.18)", marginLeft: "auto" }}>
-                          {dateItems.length} item{dateItems.length !== 1 ? "s" : ""}
-                        </span>
-                        {canFocus && (
-                          <ZoomIn size={11} strokeWidth={2} style={{
-                            color: isFocused ? "var(--accent-start)" : "rgba(255,255,255,0.18)",
-                            flexShrink: 0,
-                          }} />
-                        )}
-                      </div>
-
-                      {/* Items for this date */}
-                      {dateItems.map((item) => {
-                        const TIcon = TYPE_ICON[item.type];
-                        const isHighlighted = highlightedItemId === item.id;
-                        return (
-                          <div
-                            key={item.id}
-                            onClick={() => {
-                              const next = highlightedItemId === item.id ? null : item.id;
-                              setHighlightedItemId(next);
-                              setMapZoomToId(next);
-                            }}
-                            style={{
-                              display: "flex", gap: 8, alignItems: "center", padding: "8px 10px",
-                              borderRadius: 8, cursor: "pointer",
-                              background: isHighlighted ? "rgba(37,244,238,0.08)" : "rgba(255,255,255,0.03)",
-                              border: "1px solid " + (isHighlighted ? "rgba(37,244,238,0.3)" : "rgba(255,255,255,0.06)"),
-                              transition: "all 0.15s",
-                            }}
-                          >
-                            <TIcon size={14} strokeWidth={1.75} style={{ flexShrink: 0, color: isHighlighted ? "var(--accent-start)" : "var(--muted)" }} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: isHighlighted ? "#fff" : "#eef2f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {item.title}
-                              </div>
-                              {item.address && (
-                                <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                  {item.address}
-                                </div>
-                              )}
-                            </div>
-                            {item.lat == null && (
-                              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", flexShrink: 0 }}>no coords</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </React.Fragment>
-                  );
-                })}
               </div>
-
-              <button className="workout-create-btn" onClick={() => openItemModal()} style={{ width: "100%", marginTop: 8 }}>
-                <Icon name="plus" size={14} /> Add Item
-              </button>
             </>
           )}
 
