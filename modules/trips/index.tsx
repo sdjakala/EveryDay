@@ -1304,6 +1304,22 @@ function ItemCard({ item, expanded, highlighted, sorted, mode, editMode, onToggl
     setPickerOpen((p) => !p);
   }
 
+  useEffect(() => {
+    if (!pickerOpen || !pickerBtnRef.current) return;
+    function reposition() {
+      if (!pickerBtnRef.current) return;
+      const rect = pickerBtnRef.current.getBoundingClientRect();
+      const left = Math.min(rect.left, window.innerWidth - 248 - 8);
+      setPickerPos(
+        rect.top > 150
+          ? { bottom: window.innerHeight - rect.top + 4, left }
+          : { top: rect.bottom + 4, left }
+      );
+    }
+    window.addEventListener("scroll", reposition, true);
+    return () => window.removeEventListener("scroll", reposition, true);
+  }, [pickerOpen]);
+
   return (
     <div style={{
       borderRadius: 10,
@@ -1669,6 +1685,22 @@ function ItemDetailModal({ item, sorted, mode, onClose, onEdit }: ItemDetailModa
     }
     setPickerOpen((p) => !p);
   }
+
+  useEffect(() => {
+    if (!pickerOpen || !pickerBtnRef.current) return;
+    function reposition() {
+      if (!pickerBtnRef.current) return;
+      const rect = pickerBtnRef.current.getBoundingClientRect();
+      const left = Math.min(rect.left, window.innerWidth - 260 - 8);
+      setPickerPos(
+        rect.top > 150
+          ? { bottom: window.innerHeight - rect.top + 4, left }
+          : { top: rect.bottom + 4, left }
+      );
+    }
+    window.addEventListener("scroll", reposition, true);
+    return () => window.removeEventListener("scroll", reposition, true);
+  }, [pickerOpen]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
