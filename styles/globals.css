@@ -1156,6 +1156,9 @@ h1 {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.05); }
 }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 /* Submit workout button */
 .workout-submit-btn {

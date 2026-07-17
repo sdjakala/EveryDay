@@ -6,7 +6,7 @@ import Modal from "../../components/Modal";
 import Icon from "../../components/Icon";
 import {
   Plane, BedDouble, Target, Bus, Utensils, MapPin,
-  Car, Footprints, Bike, Link as LinkIcon, Navigation, ChevronDown, ZoomIn, Expand, X,
+  Car, Footprints, Bike, Link as LinkIcon, Navigation, ChevronDown, ZoomIn, Expand, X, Phone,
   type LucideProps,
 } from "lucide-react";
 
@@ -37,6 +37,7 @@ type TripItem = {
   directions?: string;
   links: TripLink[];
   confirmationCode?: string;
+  phone?: string;
   lat?: number;
   lng?: number;
   geocodedCity?: string;
@@ -207,6 +208,7 @@ const defaultItemForm = {
   description: "",
   directions: "",
   confirmationCode: "",
+  phone: "",
   links: [] as TripLink[],
 };
 
@@ -235,7 +237,7 @@ const labelStyle: React.CSSProperties = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = "itinerary" | "map" | "weather";
+type Tab = "itinerary" | "map" | "weather" | "discover";
 
 export default function TripPlannerModule() {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -263,6 +265,16 @@ export default function TripPlannerModule() {
   const [cityWeather, setCityWeather] = useState<CityWeather[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherFetchedFor, setWeatherFetchedFor] = useState<string | null>(null);
+
+  const [discoverText, setDiscoverText] = useState("");
+  const [discoverItems, setDiscoverItems] = useState<{ name: string; distance: string; summary: string }[]>([]);
+  const [discoverLocation, setDiscoverLocation] = useState("");
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [discoverError, setDiscoverError] = useState("");
+  const [discoverCoords, setDiscoverCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedLandmark, setSelectedLandmark] = useState<string | null>(null);
+  const [landmarkDetail, setLandmarkDetail] = useState("");
+  const [landmarkDetailLoading, setLandmarkDetailLoading] = useState(false);
 
   const [isOnline, setIsOnline] = useState(true);
   const [pendingSync, setPendingSync] = useState(0);
@@ -409,6 +421,66 @@ export default function TripPlannerModule() {
       console.error("Failed to fetch city weather", e);
     } finally {
       setWeatherLoading(false);
+    }
+  }
+
+  async function fetchDiscover(mode: "nearby" | "spot") {
+    if (!navigator.geolocation) {
+      setDiscoverError("Geolocation is not supported by your browser.");
+      return;
+    }
+    setDiscoverLoading(true);
+    setDiscoverError("");
+    setDiscoverText("");
+    setDiscoverItems([]);
+    setDiscoverLocation("");
+    setSelectedLandmark(null);
+    setLandmarkDetail("");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          setDiscoverCoords({ lat: latitude, lng: longitude });
+          const resp = await fetch(`/api/trips/discover?lat=${latitude}&lng=${longitude}&mode=${mode}`);
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || "Request failed");
+          setDiscoverLocation(data.location || "");
+          if (mode === "nearby") {
+            setDiscoverItems(data.items || []);
+          } else {
+            setDiscoverText(data.text || "");
+          }
+        } catch (e: any) {
+          setDiscoverError(e.message || "Failed to fetch discover data.");
+        } finally {
+          setDiscoverLoading(false);
+        }
+      },
+      (err) => {
+        setDiscoverError("Could not get your location: " + err.message);
+        setDiscoverLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  async function fetchLandmarkDetail(name: string) {
+    if (!discoverCoords) return;
+    setSelectedLandmark(name);
+    setLandmarkDetail("");
+    setLandmarkDetailLoading(true);
+    try {
+      const { lat, lng } = discoverCoords;
+      const resp = await fetch(
+        `/api/trips/discover?lat=${lat}&lng=${lng}&mode=detail&landmark=${encodeURIComponent(name)}`
+      );
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Request failed");
+      setLandmarkDetail(data.text || "");
+    } catch (e: any) {
+      setLandmarkDetail("Failed to load details: " + e.message);
+    } finally {
+      setLandmarkDetailLoading(false);
     }
   }
 
@@ -656,12 +728,12 @@ export default function TripPlannerModule() {
             borderBottom: "1px solid rgba(255,255,255,0.05)",
             display: "flex", gap: 4, alignItems: "center",
           }}>
-            {(["itinerary", "map", "weather"] as Tab[]).map((t) => (
+            {(["itinerary", "map", "weather", "discover"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => { setTab(t); if (t === "map") setHeaderCollapsed(true); }}
                 style={{
-                  padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                  padding: "5px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600,
                   cursor: "pointer", textTransform: "capitalize",
                   background: tab === t
                     ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)"
@@ -948,6 +1020,155 @@ export default function TripPlannerModule() {
               )}
             </div>
           )}
+
+          {/* ── Discover tab ──────────────────────────────────────────────── */}
+          {tab === "discover" && (
+            <div style={{ paddingTop: 12 }}>
+
+              {/* Detail view */}
+              {selectedLandmark && (
+                <div>
+                  <button
+                    onClick={() => { setSelectedLandmark(null); setLandmarkDetail(""); }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 5,
+                      background: "none", border: "none", color: "var(--muted)",
+                      cursor: "pointer", fontSize: 12, padding: "0 0 12px", marginBottom: 4,
+                    }}
+                  >
+                    <ChevronDown size={14} strokeWidth={2} style={{ transform: "rotate(90deg)" }} />
+                    Back to landmarks
+                  </button>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "#fff", marginBottom: 4 }}>
+                    {selectedLandmark}
+                  </div>
+                  {discoverLocation && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--muted)", marginBottom: 12 }}>
+                      <MapPin size={11} strokeWidth={1.75} /> {discoverLocation}
+                    </div>
+                  )}
+                  {landmarkDetailLoading && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontSize: 13, padding: "1rem 0" }}>
+                      <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid rgba(132,86,255,0.3)", borderTopColor: "#8456ff", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                      Loading history…
+                    </div>
+                  )}
+                  {landmarkDetail && !landmarkDetailLoading && (
+                    <div className="trip-markdown">
+                      <ReactMarkdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>
+                        {landmarkDetail}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* List view */}
+              {!selectedLandmark && (
+                <>
+                  {/* Action buttons */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                    <button
+                      onClick={() => fetchDiscover("nearby")}
+                      disabled={discoverLoading}
+                      style={{
+                        flex: 1, padding: "10px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600,
+                        cursor: discoverLoading ? "default" : "pointer",
+                        background: "linear-gradient(135deg,rgba(132,86,255,0.2),rgba(132,86,255,0.1))",
+                        border: "1px solid rgba(132,86,255,0.35)",
+                        color: discoverLoading ? "var(--muted)" : "#c4b0ff",
+                        display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 5,
+                      }}
+                    >
+                      <MapPin size={18} strokeWidth={1.5} />
+                      Nearby Landmarks
+                      <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>Ranked by importance</span>
+                    </button>
+                    <button
+                      onClick={() => fetchDiscover("spot")}
+                      disabled={discoverLoading}
+                      style={{
+                        flex: 1, padding: "10px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600,
+                        cursor: discoverLoading ? "default" : "pointer",
+                        background: "linear-gradient(135deg,rgba(37,244,238,0.12),rgba(37,244,238,0.06))",
+                        border: "1px solid rgba(37,244,238,0.25)",
+                        color: discoverLoading ? "var(--muted)" : "var(--accent-start)",
+                        display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 5,
+                      }}
+                    >
+                      <Target size={18} strokeWidth={1.5} />
+                      Where Am I?
+                      <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>History of this spot</span>
+                    </button>
+                  </div>
+
+                  {/* Loading */}
+                  {discoverLoading && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontSize: 13, padding: "1rem 0" }}>
+                      <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid rgba(132,86,255,0.3)", borderTopColor: "#8456ff", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                      Getting your location and fetching history…
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {discoverError && !discoverLoading && (
+                    <div style={{ fontSize: 12, color: "#ff6b6b", padding: "10px 14px", borderRadius: 8, background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)" }}>
+                      {discoverError}
+                    </div>
+                  )}
+
+                  {/* Location label */}
+                  {(discoverItems.length > 0 || discoverText) && discoverLocation && !discoverLoading && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--muted)", marginBottom: 12 }}>
+                      <MapPin size={11} strokeWidth={1.75} /> {discoverLocation}
+                    </div>
+                  )}
+
+                  {/* Nearby landmark cards */}
+                  {discoverItems.length > 0 && !discoverLoading && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {discoverItems.map((item, i) => (
+                        <button
+                          key={i}
+                          onClick={() => fetchLandmarkDetail(item.name)}
+                          style={{
+                            width: "100%", textAlign: "left", padding: "12px 14px", borderRadius: 10,
+                            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                            cursor: "pointer", display: "flex", flexDirection: "column", gap: 4,
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(132,86,255,0.08)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                            <span style={{ fontWeight: 700, fontSize: 13, color: "#fff" }}>{item.name}</span>
+                            <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0, paddingTop: 2 }}>{item.distance}</span>
+                          </div>
+                          <span style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>{item.summary}</span>
+                          <span style={{ fontSize: 11, color: "#8456ff", marginTop: 2 }}>Tap for full history →</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Spot mode text result */}
+                  {discoverText && !discoverLoading && (
+                    <div className="trip-markdown">
+                      <ReactMarkdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>
+                        {discoverText}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+
+                  {/* Empty state */}
+                  {!discoverItems.length && !discoverText && !discoverLoading && !discoverError && (
+                    <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "2rem 1rem", lineHeight: 1.6 }}>
+                      Tap a button above to discover the history around you.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -1047,6 +1268,7 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
             description: editingItem.description || "",
             directions: editingItem.directions || "",
             confirmationCode: editingItem.confirmationCode || "",
+            phone: editingItem.phone || "",
             links: editingItem.links || [] }
         : defaultItemForm
     );
@@ -1176,6 +1398,11 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
         <input style={inputStyle} placeholder="e.g. XYZ789"
           value={itemForm.confirmationCode}
           onChange={(e) => setItemForm((f) => ({ ...f, confirmationCode: e.target.value }))} />
+
+        <label style={labelStyle}>Phone number</label>
+        <input style={inputStyle} placeholder="e.g. +39 06 1234 5678" type="tel"
+          value={itemForm.phone}
+          onChange={(e) => setItemForm((f) => ({ ...f, phone: e.target.value }))} />
 
         <label style={labelStyle}>
           Description / notes
@@ -1362,6 +1589,19 @@ function ItemCard({ item, expanded, highlighted, sorted, mode, editMode, onToggl
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
               <span style={{ color: "rgba(255,255,255,0.5)", marginRight: 4 }}>Conf:</span>
               <span style={{ fontFamily: "monospace", color: "#fff" }}>{item.confirmationCode}</span>
+            </div>
+          )}
+
+          {item.phone && (
+            <div style={{ marginTop: 8 }}>
+              <a href={`tel:${item.phone.replace(/\s/g, "")}`} style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 500,
+                background: "rgba(37,244,238,0.08)", border: "1px solid rgba(37,244,238,0.2)",
+                color: "var(--accent-start)", textDecoration: "none",
+              }}>
+                <Phone size={11} strokeWidth={1.75} /> {item.phone}
+              </a>
             </div>
           )}
 
@@ -1793,6 +2033,17 @@ function ItemDetailModal({ item, sorted, mode, onClose, onEdit }: ItemDetailModa
                 {item.confirmationCode}
               </div>
             </div>
+          )}
+
+          {item.phone && (
+            <a href={`tel:${item.phone.replace(/\s/g, "")}`} style={{
+              display: "inline-flex", alignItems: "center", gap: 7,
+              padding: "8px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+              background: "rgba(37,244,238,0.08)", border: "1px solid rgba(37,244,238,0.2)",
+              color: "var(--accent-start)", textDecoration: "none",
+            }}>
+              <Phone size={14} strokeWidth={1.75} /> {item.phone}
+            </a>
           )}
 
           {/* Notes / Directions */}
