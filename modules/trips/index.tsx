@@ -194,6 +194,14 @@ function extractUniqueCities(items: TripItem[]): { key: string; city: string; co
   return seen.map((v) => ({ key: `${v.city}::${v.country}`.toLowerCase(), ...v }));
 }
 
+// ─── Discover default prompts ─────────────────────────────────────────────────
+
+const DEFAULT_PROMPTS = {
+  nearby: `I am currently at {location}. Return a JSON array of the 8 most significant landmarks within approximately 1 kilometer of my location, ranked from most to least important. Each object must have exactly these fields:\n- "name": the landmark name\n- "distance": estimated walking direction and distance (e.g. "~400m north")\n- "summary": 2-3 sentences blending historical background with current-day relevance — what it was, what it is today, and why it still matters\n\nRespond with ONLY the raw JSON array, no markdown fences, no explanation.`,
+  spot: `I am standing at {location}. Give me a rich blend of historical context and current-day information about this exact location and its immediate surroundings. Cover what happened here historically, who lived or worked here, when things were built and why they matter — then bring it to the present with what exists here today, what visitors can see or do, any current cultural or practical significance, and useful visitor tips. Weave past and present together naturally in engaging flowing paragraphs. Be specific and vivid.`,
+  detail: `I am near {location} and I want to learn about "{landmark}". Give me a rich mix of historical background and current-day facts about this landmark. Cover its origins and founding, key historical events, notable people associated with it, and its architectural or cultural significance — then bring it up to date with what the site is like today, whether it is open to visitors, what you can see there now, current admission or access details if known, and why it still matters. Weave history and present day together in engaging flowing paragraphs. Be thorough and vivid.`,
+};
+
 // ─── Default form values ──────────────────────────────────────────────────────
 
 const defaultItemForm = {
@@ -275,6 +283,13 @@ export default function TripPlannerModule() {
   const [selectedLandmark, setSelectedLandmark] = useState<string | null>(null);
   const [landmarkDetail, setLandmarkDetail] = useState("");
   const [landmarkDetailLoading, setLandmarkDetailLoading] = useState(false);
+  const [promptsOpen, setPromptsOpen] = useState(false);
+  const [customPrompts, setCustomPrompts] = useState(() => {
+    try {
+      const saved = localStorage.getItem("discover_prompts");
+      return saved ? { ...DEFAULT_PROMPTS, ...JSON.parse(saved) } : { ...DEFAULT_PROMPTS };
+    } catch { return { ...DEFAULT_PROMPTS }; }
+  });
 
   const [isOnline, setIsOnline] = useState(true);
   const [pendingSync, setPendingSync] = useState(0);
@@ -441,7 +456,11 @@ export default function TripPlannerModule() {
         try {
           const { latitude, longitude } = pos.coords;
           setDiscoverCoords({ lat: latitude, lng: longitude });
-          const resp = await fetch(`/api/trips/discover?lat=${latitude}&lng=${longitude}&mode=${mode}`);
+          const resp = await fetch("/api/trips/discover", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lat: latitude, lng: longitude, mode, prompts: customPrompts }),
+          });
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || "Request failed");
           setDiscoverLocation(data.location || "");
@@ -471,9 +490,11 @@ export default function TripPlannerModule() {
     setLandmarkDetailLoading(true);
     try {
       const { lat, lng } = discoverCoords;
-      const resp = await fetch(
-        `/api/trips/discover?lat=${lat}&lng=${lng}&mode=detail&landmark=${encodeURIComponent(name)}`
-      );
+      const resp = await fetch("/api/trips/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lng, mode: "detail", landmark: name, prompts: customPrompts }),
+      });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || "Request failed");
       setLandmarkDetail(data.text || "");
@@ -1100,6 +1121,57 @@ export default function TripPlannerModule() {
                       Where Am I?
                       <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>History of this spot</span>
                     </button>
+                  </div>
+
+                  {/* Prompt editor */}
+                  <div style={{ marginBottom: 12 }}>
+                    <button
+                      onClick={() => setPromptsOpen(o => !o)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 5,
+                        background: "none", border: "none", cursor: "pointer",
+                        fontSize: 11, color: "var(--muted)", padding: "2px 0",
+                      }}
+                    >
+                      <ChevronDown size={12} strokeWidth={2} style={{ transform: promptsOpen ? "none" : "rotate(-90deg)", transition: "transform 0.2s" }} />
+                      Customize prompts
+                    </button>
+                    {promptsOpen && (
+                      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                        {(["nearby", "spot", "detail"] as const).map((key) => (
+                          <div key={key}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                              {key === "nearby" ? "Nearby Landmarks" : key === "spot" ? "Where Am I?" : "Detail View"}
+                              {key !== "detail" && <span style={{ fontWeight: 400, opacity: 0.6 }}> — use {"{location}"} for your location</span>}
+                              {key === "detail" && <span style={{ fontWeight: 400, opacity: 0.6 }}> — use {"{location}"} and {"{landmark}"}</span>}
+                            </div>
+                            <textarea
+                              value={customPrompts[key]}
+                              onChange={(e) => {
+                                const updated = { ...customPrompts, [key]: e.target.value };
+                                setCustomPrompts(updated);
+                                try { localStorage.setItem("discover_prompts", JSON.stringify(updated)); } catch {}
+                              }}
+                              style={{
+                                ...inputStyle,
+                                minHeight: 90, resize: "vertical",
+                                fontFamily: "monospace", fontSize: 11, lineHeight: 1.5,
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                const updated = { ...customPrompts, [key]: DEFAULT_PROMPTS[key] };
+                                setCustomPrompts(updated);
+                                try { localStorage.setItem("discover_prompts", JSON.stringify(updated)); } catch {}
+                              }}
+                              style={{ fontSize: 10, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginTop: 2 }}
+                            >
+                              Reset to default
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Loading */}
