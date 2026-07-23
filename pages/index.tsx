@@ -28,7 +28,7 @@ export default function Dashboard() {
   const [dragOver, setDragOver] = useState<string | null>(null);
 
   useEffect(() => {
-    // Fetch logged-in user info
+    // Fetch logged-in user info; fall back to localStorage when offline
     fetch("/api/auth/me")
       .then((r) => {
         if (r.ok) return r.json();
@@ -42,10 +42,33 @@ export default function Dashboard() {
             name: data.payload.name || data.payload.email || "User",
             rank: 1,
           });
+          try { localStorage.setItem("cached_auth", JSON.stringify(data)); } catch {}
         }
       })
       .catch((e) => {
-        console.warn("User not authenticated:", e);
+        // TypeError means fetch() itself failed (network unreachable) — not an auth rejection
+        const isNetworkError = e instanceof TypeError || !navigator.onLine;
+        if (isNetworkError) {
+          // Offline — restore session from localStorage so authenticated features stay visible
+          try {
+            const raw = localStorage.getItem("cached_auth");
+            if (raw) {
+              const data = JSON.parse(raw);
+              if (data.payload) {
+                setIsAuthenticated(true);
+                setUser({
+                  id: data.payload.sub || "1",
+                  name: data.payload.name || data.payload.email || "User",
+                  rank: 1,
+                });
+                return;
+              }
+            }
+          } catch {}
+        } else {
+          // Server responded with an auth error — clear stale cached session
+          try { localStorage.removeItem("cached_auth"); } catch {}
+        }
         setIsAuthenticated(false);
         setUser(null);
       });
