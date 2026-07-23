@@ -539,15 +539,19 @@ export default function TripPlannerModule() {
   }
 
   function startRecording() {
+    setTranslateError("");
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
-      setTranslateError("Speech recognition is not supported in this browser.");
+      setTranslateError("Speech recognition is not supported in this browser. Please type your text instead.");
       return;
     }
     const recognition = new SR();
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = "en-US";
+
+    let started = false;
+
     recognition.onresult = (event: any) => {
       const transcript = (Array.from(event.results) as any[])
         .map((r) => r[0].transcript)
@@ -557,12 +561,31 @@ export default function TripPlannerModule() {
     recognition.onend = () => setIsRecording(false);
     recognition.onerror = (e: any) => {
       setIsRecording(false);
-      if (e.error !== "aborted") setTranslateError("Microphone error: " + e.error);
+      const friendly: Record<string, string> = {
+        "not-allowed":          "Microphone access denied. Please allow microphone permission in your browser settings and try again.",
+        "network":              "Speech recognition needs Google's servers and couldn't reach them. Check your connection or type your text instead.",
+        "no-speech":            "No speech detected. Please try again.",
+        "audio-capture":        "Could not access the microphone. Check that it is connected and not in use by another app.",
+        "service-not-available":"Speech recognition service is unavailable. Please type your text instead.",
+      };
+      // "aborted" that fires before the user manually stops = the browser silently
+      // refused to start (common on iOS / when permission was previously denied).
+      const isFailedStart = e.error === "aborted" && !started;
+      if (isFailedStart) {
+        setTranslateError("Microphone could not start. Check that microphone permission is allowed for this site.");
+      } else if (e.error !== "aborted") {
+        setTranslateError(friendly[e.error] ?? ("Microphone error: " + e.error));
+      }
     };
-    recognition.start();
-    recognitionRef.current = recognition;
-    setIsRecording(true);
-    setTranslateError("");
+
+    try {
+      recognition.start();
+      started = true;
+      recognitionRef.current = recognition;
+      setIsRecording(true);
+    } catch (e: any) {
+      setTranslateError("Could not start microphone: " + (e.message || e));
+    }
   }
 
   function stopRecording() {
@@ -1138,6 +1161,7 @@ export default function TripPlannerModule() {
                 />
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
+                  onContextMenu={(e) => e.preventDefault()}
                   title={isRecording ? "Stop recording" : "Speak"}
                   style={{
                     position: "absolute", right: 8, top: 8,
@@ -1146,6 +1170,8 @@ export default function TripPlannerModule() {
                     background: isRecording ? "rgba(255,107,107,0.18)" : "rgba(132,86,255,0.15)",
                     color: isRecording ? "#ff6b6b" : "#8456ff",
                     transition: "background 0.15s, color 0.15s",
+                    WebkitUserSelect: "none", userSelect: "none",
+                    touchAction: "manipulation",
                   }}
                 >
                   {isRecording ? <MicOff size={15} strokeWidth={1.75} /> : <Mic size={15} strokeWidth={1.75} />}
