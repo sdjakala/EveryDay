@@ -32,9 +32,12 @@ function checkForUpdates() {
       registration.update();
     });
 
-    // Listen for new service worker waiting to activate
+    // Reload once when a new service worker takes over — guard prevents the
+    // skipWaiting() + controllerchange cycle from reloading in an infinite loop.
+    let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      // Service worker changed, reload the page
+      if (refreshing) return;
+      refreshing = true;
       window.location.reload();
     });
   }

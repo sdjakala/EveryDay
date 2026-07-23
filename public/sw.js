@@ -1,4 +1,4 @@
-const VERSION    = "2.0.0";
+const VERSION    = "2.1.0";
 const SHELL_CACHE = `everyday-v${VERSION}`;
 const TRIPS_CACHE = `everyday-trips-v1`;   // versioned separately — survives shell updates
 const SYNC_TAG    = "trips-mutations";
@@ -117,16 +117,21 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(
-        names
-          .filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE)
-          .map((n) => {
-            console.log("SW: removing old cache", n);
-            return caches.delete(n);
-          })
-      )
-    )
+    Promise.all([
+      // Enable navigation preload so Chrome for Android can start a network
+      // fetch in parallel with SW startup, reducing navigation latency.
+      self.registration.navigationPreload?.enable(),
+      caches.keys().then((names) =>
+        Promise.all(
+          names
+            .filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE)
+            .map((n) => {
+              console.log("SW: removing old cache", n);
+              return caches.delete(n);
+            })
+        )
+      ),
+    ])
   );
   self.clients.claim();
 });
@@ -208,8 +213,51 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Auth routes — never intercept
-  if (url.pathname.startsWith("/api/auth/")) return;
+  // Auth routes — never intercept, EXCEPT /me which we cache for offline support
+  if (url.pathname.startsWith("/api/auth/") && url.pathname !== "/api/auth/me") return;
+
+  // /api/auth/me — network-first, cache fallback so the dashboard keeps the
+  // user authenticated offline after at least one successful online session.
+  if (url.pathname === "/api/auth/me") {
+    event.respondWith(
+      (async () => {
+        try {
+          const res = await fetch(request);
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(SHELL_CACHE).then((c) => c.put(request, clone));
+          }
+          return res;
+        } catch (_) {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          return new Response(JSON.stringify({ error: "No session" }), {
+            status: 401, headers: { "Content-Type": "application/json" },
+          });
+        }
+      })()
+    );
+    return;
+  }
+
+  // /api/modules — stale-while-revalidate so the dashboard renders offline.
+  if (url.pathname === "/api/modules" && request.method === "GET") {
+    event.respondWith(
+      (async () => {
+        const cached = await caches.match(request);
+        const freshen = fetch(request).then((res) => {
+          if (res.ok) { const clone = res.clone(); caches.open(SHELL_CACHE).then((c) => c.put(request, clone)); }
+          return res;
+        }).catch(() => null);
+        // Serve stale immediately and refresh in background; if no cache, wait for network.
+        if (cached) { freshen; return cached; }
+        return (await freshen) || new Response(JSON.stringify([]), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      })()
+    );
+    return;
+  }
 
   // Trips API (but not /api/trips/geocode)
   const isTrips = (
@@ -239,15 +287,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // HTML pages — network-first, fall back to cached page then app shell
-  if (request.headers.get("accept")?.includes("text/html")) {
+  // Page navigations — network-first with shell cache fallback.
+  // Use request.mode === "navigate" rather than the Accept header: Chrome in
+  // WebAPK / standalone PWA mode sends a different Accept header on launch,
+  // which caused the handler to be skipped and the dino page to appear offline.
+  if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((res) => {
-          caches.open(SHELL_CACHE).then((c) => c.put(request, res.clone()));
+      (async () => {
+        try {
+          // Use the navigation-preload response when available (Chrome for Android
+          // starts this fetch in parallel with SW startup; free latency win).
+          const preloaded = await event.preloadResponse;
+          const res = preloaded || await fetch(request);
+          const clone = res.clone();
+          caches.open(SHELL_CACHE).then((c) => c.put(request, clone));
           return res;
-        })
-        .catch(async () => {
+        } catch (_) {
           const cached = await caches.match(request);
           if (cached) return cached;
           const shell = await caches.match("/");
@@ -258,7 +313,8 @@ self.addEventListener("fetch", (event) => {
             "<h2>You're offline</h2><p>Reload when you're back online.</p></body></html>",
             { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } }
           );
-        })
+        }
+      })()
     );
     return;
   }
@@ -268,8 +324,10 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cached) => {
       if (cached) return cached;
       return fetch(request).then((res) => {
-        if (res.ok && res.type === "basic")
-          caches.open(SHELL_CACHE).then((c) => c.put(request, res.clone()));
+        if (res.ok && res.type === "basic") {
+          const clone = res.clone();
+          caches.open(SHELL_CACHE).then((c) => c.put(request, clone));
+        }
         return res;
       }).catch(() => caches.match("/"));
     })

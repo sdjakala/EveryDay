@@ -7,6 +7,7 @@ import Icon from "../../components/Icon";
 import {
   Plane, BedDouble, Target, Bus, Utensils, MapPin,
   Car, Footprints, Bike, Link as LinkIcon, Navigation, ChevronDown, ZoomIn, Expand, X, Phone,
+  Mic, MicOff, Languages,
   type LucideProps,
 } from "lucide-react";
 
@@ -245,7 +246,7 @@ const labelStyle: React.CSSProperties = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = "itinerary" | "map" | "weather" | "discover";
+type Tab = "itinerary" | "map" | "weather" | "discover" | "translate";
 
 export default function TripPlannerModule() {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -291,6 +292,14 @@ export default function TripPlannerModule() {
     } catch { return { ...DEFAULT_PROMPTS }; }
   });
 
+  const [translateText, setTranslateText] = useState("");
+  const [translateResult, setTranslateResult] = useState("");
+  const [translatePhonetic, setTranslatePhonetic] = useState("");
+  const [translateLanguage, setTranslateLanguage] = useState("Italian");
+  const [translateLoading, setTranslateLoading] = useState(false);
+  const [translateError, setTranslateError] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+
   const [isOnline, setIsOnline] = useState(true);
   const [pendingSync, setPendingSync] = useState(0);
   const [justSynced, setJustSynced] = useState(false);
@@ -298,6 +307,7 @@ export default function TripPlannerModule() {
   // Ref on the sticky map+filter block; measured bottom drives the items list height.
   const rootRef = useRef<HTMLDivElement>(null);
   const mapPanelRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
   const [listTop, setListTop] = useState(434);
 
   useEffect(() => { fetchTrips(); }, []);
@@ -503,6 +513,61 @@ export default function TripPlannerModule() {
     } finally {
       setLandmarkDetailLoading(false);
     }
+  }
+
+  async function doTranslate() {
+    if (!translateText.trim()) return;
+    setTranslateLoading(true);
+    setTranslateError("");
+    setTranslateResult("");
+    setTranslatePhonetic("");
+    try {
+      const resp = await fetch("/api/trips/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: translateText.trim(), language: translateLanguage }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Translation failed");
+      setTranslateResult(data.translation || "");
+      setTranslatePhonetic(data.phonetic || "");
+    } catch (e: any) {
+      setTranslateError(e.message || "Translation failed");
+    } finally {
+      setTranslateLoading(false);
+    }
+  }
+
+  function startRecording() {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setTranslateError("Speech recognition is not supported in this browser.");
+      return;
+    }
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event: any) => {
+      const transcript = (Array.from(event.results) as any[])
+        .map((r) => r[0].transcript)
+        .join("");
+      setTranslateText(transcript);
+    };
+    recognition.onend = () => setIsRecording(false);
+    recognition.onerror = (e: any) => {
+      setIsRecording(false);
+      if (e.error !== "aborted") setTranslateError("Microphone error: " + e.error);
+    };
+    recognition.start();
+    recognitionRef.current = recognition;
+    setIsRecording(true);
+    setTranslateError("");
+  }
+
+  function stopRecording() {
+    recognitionRef.current?.stop();
+    setIsRecording(false);
   }
 
   function openTripModal(trip?: Trip) {
@@ -749,7 +814,7 @@ export default function TripPlannerModule() {
             borderBottom: "1px solid rgba(255,255,255,0.05)",
             display: "flex", gap: 4, alignItems: "center",
           }}>
-            {(["itinerary", "map", "weather", "discover"] as Tab[]).map((t) => (
+            {(["itinerary", "map", "weather", "discover", "translate"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => { setTab(t); if (t === "map") setHeaderCollapsed(true); }}
@@ -1043,6 +1108,122 @@ export default function TripPlannerModule() {
           )}
 
           {/* ── Discover tab ──────────────────────────────────────────────── */}
+          {tab === "translate" && (
+            <div style={{ paddingTop: 12 }}>
+
+              {/* Language selector */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <Languages size={14} strokeWidth={1.75} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "var(--muted)", flexShrink: 0 }}>Translate to</span>
+                <select
+                  value={translateLanguage}
+                  onChange={(e) => { setTranslateLanguage(e.target.value); setTranslateResult(""); setTranslatePhonetic(""); }}
+                  style={{ ...inputStyle, flex: 1, fontSize: 13, padding: "6px 8px" }}
+                >
+                  {["Italian", "Spanish", "French", "German", "Portuguese", "Japanese", "Mandarin Chinese", "Greek", "Arabic", "Dutch"].map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Text input + mic button */}
+              <div style={{ position: "relative", marginBottom: 10 }}>
+                <textarea
+                  value={translateText}
+                  onChange={(e) => setTranslateText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) doTranslate(); }}
+                  placeholder="Type what you want to translate, or tap the mic to speak…"
+                  rows={4}
+                  style={{ ...inputStyle, resize: "vertical", minHeight: 90, paddingRight: 48, lineHeight: 1.55 }}
+                />
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  title={isRecording ? "Stop recording" : "Speak"}
+                  style={{
+                    position: "absolute", right: 8, top: 8,
+                    width: 34, height: 34, borderRadius: "50%", border: "none", cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: isRecording ? "rgba(255,107,107,0.18)" : "rgba(132,86,255,0.15)",
+                    color: isRecording ? "#ff6b6b" : "#8456ff",
+                    transition: "background 0.15s, color 0.15s",
+                  }}
+                >
+                  {isRecording ? <MicOff size={15} strokeWidth={1.75} /> : <Mic size={15} strokeWidth={1.75} />}
+                </button>
+                {isRecording && (
+                  <div style={{
+                    position: "absolute", right: 50, top: 14,
+                    fontSize: 11, color: "#ff6b6b", display: "flex", alignItems: "center", gap: 5,
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#ff6b6b", display: "inline-block", animation: "pulse 1s ease-in-out infinite" }} />
+                    Listening…
+                  </div>
+                )}
+              </div>
+
+              {/* Translate button */}
+              <button
+                onClick={doTranslate}
+                disabled={!translateText.trim() || translateLoading}
+                style={{
+                  width: "100%", padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                  border: "none",
+                  cursor: translateText.trim() && !translateLoading ? "pointer" : "default",
+                  background: translateText.trim() && !translateLoading
+                    ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)"
+                    : "rgba(255,255,255,0.05)",
+                  color: translateText.trim() && !translateLoading ? "#071018" : "var(--muted)",
+                  marginBottom: 16,
+                  transition: "background 0.15s",
+                }}
+              >
+                {translateLoading ? "Translating…" : `Translate to ${translateLanguage}`}
+              </button>
+
+              {/* Error */}
+              {translateError && (
+                <div style={{ fontSize: 12, color: "#ff6b6b", padding: "10px 14px", borderRadius: 8, background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)", marginBottom: 12 }}>
+                  {translateError}
+                </div>
+              )}
+
+              {/* Loading spinner */}
+              {translateLoading && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontSize: 13, padding: "1rem 0" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid rgba(132,86,255,0.3)", borderTopColor: "#8456ff", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                  Translating…
+                </div>
+              )}
+
+              {/* Result cards */}
+              {translateResult && !translateLoading && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>English</div>
+                    <div style={{ fontSize: 14, color: "#eef2f5", lineHeight: 1.6 }}>{translateText}</div>
+                  </div>
+                  <div style={{ padding: "12px 14px", borderRadius: 10, background: "linear-gradient(135deg,rgba(132,86,255,0.12),rgba(132,86,255,0.06))", border: "1px solid rgba(132,86,255,0.3)" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#8456ff", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{translateLanguage}</div>
+                    <div style={{ fontSize: 14, color: "#eef2f5", lineHeight: 1.6 }}>{translateResult}</div>
+                    {translatePhonetic && (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(132,86,255,0.2)" }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Pronunciation</div>
+                        <div style={{ fontSize: 13, color: "#c4b0ff", lineHeight: 1.6, fontStyle: "italic" }}>{translatePhonetic}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!translateResult && !translateLoading && !translateError && (
+                <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "2rem 1rem", lineHeight: 1.6 }}>
+                  Speak or type a phrase and translate it on the spot.
+                </div>
+              )}
+            </div>
+          )}
+
           {tab === "discover" && (
             <div style={{ paddingTop: 12 }}>
 
@@ -1367,7 +1548,7 @@ function ItemFormModal({ open, editingItem, onClose, onSave }: ItemFormModalProp
     const addressChanged = itemForm.address.trim() !== (editingItem?.address || "").trim();
     const missingCoords = !!itemForm.address.trim() && editingItem?.lat == null;
 
-    if (itemForm.address.trim() && (addressChanged || missingCoords)) {
+    if (itemForm.address.trim() && (addressChanged || missingCoords) && navigator.onLine) {
       setGeocoding(true);
       try {
         const res = await fetch("/api/trips/geocode", {
