@@ -17,6 +17,14 @@ async function fetchModules() {
   return res.json();
 }
 
+function ModuleOfflineFallback() {
+  return (
+    <p style={{ color: "var(--muted)", padding: "1rem" }}>
+      Module unavailable offline — connect to load.
+    </p>
+  );
+}
+
 export default function Dashboard() {
   const [modules, setModules] = useState<ModuleMeta[]>([]);
   const [hiddenModules, setHiddenModules] = useState<string[]>([]);
@@ -250,11 +258,7 @@ export default function Dashboard() {
                 () =>
                   import(`../modules/${mod.name}/index`)
                     .then((m) => m.default)
-                    .catch(() => () => (
-                      <p style={{ color: "var(--muted)", padding: "1rem" }}>
-                        Module unavailable offline — connect to load.
-                      </p>
-                    )),
+                    .catch(() => ModuleOfflineFallback),
                 {
                   ssr: false,
                   loading: () => (
