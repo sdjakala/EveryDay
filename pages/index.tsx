@@ -42,7 +42,7 @@ export default function Dashboard() {
             name: data.payload.name || data.payload.email || "User",
             rank: 1,
           });
-          try { localStorage.setItem("cached_auth", JSON.stringify(data)); } catch {}
+          try { localStorage.setItem("cached_auth", JSON.stringify(data)); } catch (_) { /* ignore */ }
         }
       })
       .catch((e) => {
@@ -64,10 +64,10 @@ export default function Dashboard() {
                 return;
               }
             }
-          } catch {}
+          } catch (_) { /* ignore */ }
         } else {
           // Server responded with an auth error — clear stale cached session
-          try { localStorage.removeItem("cached_auth"); } catch {}
+          try { localStorage.removeItem("cached_auth"); } catch (_) { /* ignore */ }
         }
         setIsAuthenticated(false);
         setUser(null);
