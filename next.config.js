@@ -2,6 +2,11 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+    ],
+  },
   // Keep pages-based routing for simplicity and Azure Static Web Apps compatibility
   // During development, ignore changes under `data/` and `.next/` to avoid
   // triggering Fast Refresh on backend persistence writes.

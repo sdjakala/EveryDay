@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 
 type UserProfile = {
@@ -76,15 +77,12 @@ export default function ProfilePage() {
           }}
         >
           {user.picture && (
-            <img
+            <Image
               src={user.picture}
               alt={user.name || user.email}
-              style={{
-                width: 80,
-                height: 80,
-                borderRadius: "50%",
-                objectFit: "cover",
-              }}
+              width={80}
+              height={80}
+              style={{ borderRadius: "50%", objectFit: "cover" }}
             />
           )}
           <div>
