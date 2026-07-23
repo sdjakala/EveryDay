@@ -233,7 +233,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // HTML pages — network-first
+  // HTML pages — network-first, fall back to cached page then app shell
   if (request.headers.get("accept")?.includes("text/html")) {
     event.respondWith(
       fetch(request)
@@ -241,7 +241,7 @@ self.addEventListener("fetch", (event) => {
           caches.open(SHELL_CACHE).then((c) => c.put(request, res.clone()));
           return res;
         })
-        .catch(() => caches.match(request))
+        .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
     );
     return;
   }
