@@ -248,7 +248,13 @@ export default function Dashboard() {
               
               const Component = dynamic(
                 () =>
-                  import(`../modules/${mod.name}/index`).then((m) => m.default),
+                  import(`../modules/${mod.name}/index`)
+                    .then((m) => m.default)
+                    .catch(() => () => (
+                      <p style={{ color: "var(--muted)", padding: "1rem" }}>
+                        Module unavailable offline — connect to load.
+                      </p>
+                    )),
                 {
                   ssr: false,
                   loading: () => (
@@ -301,7 +307,13 @@ export default function Dashboard() {
 
             const Component = dynamic(
               () =>
-                import(`../modules/${mod.name}/index`).then((m) => m.default),
+                import(`../modules/${mod.name}/index`)
+                  .then((m) => m.default)
+                  .catch(() => () => (
+                    <p style={{ color: "var(--muted)", padding: "1rem" }}>
+                      Module unavailable offline — connect to load.
+                    </p>
+                  )),
               {
                 ssr: false,
                 loading: () => (

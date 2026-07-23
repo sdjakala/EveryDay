@@ -5,19 +5,15 @@ import "../styles/globals.css";
 import Layout from "../components/Layout";
 
 function registerServiceWorker() {
-  // Register the service worker for PWA functionality
-  if(typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register('/sw.js')
-        .then(registration => {
-          console.log('Service Worker registered with scope:', registration.scope);
-        })
-        .catch(error => {
-          console.error('Service Worker registration failed:', error);
-        });
-    });
-  }
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  // Register immediately — never rely on the 'load' event listener, because when
+  // the page is served instantly from SW cache the 'load' event can fire before
+  // useEffect runs, causing the listener to be added too late and the SW to never
+  // re-register after a session where it was unregistered.
+  navigator.serviceWorker
+    .register('/sw.js')
+    .then((reg) => console.log('[SW] registered, scope:', reg.scope))
+    .catch((err) => console.error('[SW] registration failed:', err));
 }
 
 function checkForUpdates() {
@@ -63,8 +59,9 @@ export default function App({ Component, pageProps }: AppProps) {
     registerServiceWorker();
     checkForUpdates();
 
-    // Warm the SW cache with every /_next/ resource loaded this session.
-    // Delay slightly so dynamic imports have time to settle.
+    // Warm the SW cache immediately, then again after 3 s so any lazily-loaded
+    // chunks (e.g. the trips module) are also captured once React finishes rendering.
+    reportLoadedResourcesToSW();
     const warmTimer = setTimeout(reportLoadedResourcesToSW, 3000);
 
     // When connectivity is restored, tell the SW to replay queued mutations

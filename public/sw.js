@@ -1,6 +1,6 @@
 // Version is informational only — the cache name is fixed so version bumps
 // never wipe cached assets and break offline for users.
-const VERSION    = "2.1.0";
+const VERSION    = "2.2.0";
 const SHELL_CACHE = "everyday-shell";
 const TRIPS_CACHE = `everyday-trips-v1`;   // versioned separately — survives shell updates
 const SYNC_TAG    = "trips-mutations";
@@ -255,8 +255,14 @@ async function replayMutations() {
 // ── Fetch handler ─────────────────────────────────────────────────────────────
 
 self.addEventListener("fetch", (event) => {
+  let url;
+  try {
+    url = new URL(event.request.url);
+  } catch (_) {
+    return; // unparseable URL — let the browser handle it
+  }
+
   const { request } = event;
-  const url = new URL(request.url);
 
   // Auth routes — never intercept, EXCEPT /me which we cache for offline support
   if (url.pathname.startsWith("/api/auth/") && url.pathname !== "/api/auth/me") return;
@@ -343,6 +349,7 @@ self.addEventListener("fetch", (event) => {
   // WebAPK / standalone PWA mode sends a different Accept header on launch,
   // which caused the handler to be skipped and the dino page to appear offline.
   if (request.mode === "navigate") {
+    console.log("[SW] navigate →", url.pathname, "online:", navigator.onLine);
     event.respondWith(
       (async () => {
         try {
