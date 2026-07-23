@@ -101,17 +101,31 @@ async function deleteFromTripsCache(tripId) {
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) =>
-      // Fetch each resource independently so one 404 can't abort the whole install
-      Promise.allSettled(
-        ["/", "/manifest.json"].map((url) =>
-          fetch(url).then((res) => {
-            if (res.ok) return cache.put(url, res);
-            console.warn("SW: skipping non-ok resource during install", url, res.status);
-          }).catch((e) => console.warn("SW: failed to fetch during install", url, e))
-        )
-      )
-    )
+    (async () => {
+      const cache = await caches.open(SHELL_CACHE);
+      try {
+        // Fetch the root HTML, then extract every Next.js chunk URL from it and
+        // pre-cache them all so the app shell works offline immediately after install.
+        const shellRes = await fetch("/");
+        if (!shellRes.ok) return;
+        await cache.put("/", shellRes.clone());
+
+        const html = await shellRes.text();
+        const scripts = [...html.matchAll(/src="(\/_next\/static\/[^"]+\.js)"/g)].map((m) => m[1]);
+        const styles  = [...html.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]);
+
+        await Promise.allSettled(
+          ["/manifest.json", ...scripts, ...styles].map((url) =>
+            fetch(url)
+              .then((res) => { if (res.ok) return cache.put(url, res); })
+              .catch((e) => console.warn("SW: skipping during install", url, e))
+          )
+        );
+        console.log(`SW: cached shell + ${scripts.length} scripts + ${styles.length} styles`);
+      } catch (e) {
+        console.warn("SW: install fetch failed (offline?)", e);
+      }
+    })()
   );
 });
 
@@ -121,16 +135,30 @@ self.addEventListener("activate", (event) => {
       // Enable navigation preload so Chrome for Android can start a network
       // fetch in parallel with SW startup, reducing navigation latency.
       self.registration.navigationPreload?.enable(),
-      caches.keys().then((names) =>
-        Promise.all(
-          names
-            .filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE)
-            .map((n) => {
-              console.log("SW: removing old cache", n);
-              return caches.delete(n);
-            })
-        )
-      ),
+      (async () => {
+        const allNames = await caches.keys();
+        const newCache = await caches.open(SHELL_CACHE);
+
+        // Migrate entries from older shell caches into the new one before
+        // deleting them — this preserves offline coverage across version bumps
+        // so users don't lose the app after a SW update.
+        for (const oldName of allNames.filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE && n.startsWith("everyday-v"))) {
+          const old = await caches.open(oldName);
+          for (const req of await old.keys()) {
+            if (!(await newCache.match(req))) {
+              const res = await old.match(req);
+              if (res) await newCache.put(req, res);
+            }
+          }
+          console.log("SW: migrated and removed old cache", oldName);
+          await caches.delete(oldName);
+        }
+
+        // Remove any unexpected cache names
+        for (const name of allNames.filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE && !n.startsWith("everyday-v"))) {
+          await caches.delete(name);
+        }
+      })(),
     ])
   );
   self.clients.claim();
@@ -329,7 +357,11 @@ self.addEventListener("fetch", (event) => {
           caches.open(SHELL_CACHE).then((c) => c.put(request, clone));
         }
         return res;
-      }).catch(() => caches.match("/"));
+      }).catch(() =>
+        // Return a real error — never fall back to shell HTML here since the
+        // browser would try to parse HTML as JavaScript and crash the app.
+        new Response("", { status: 503, statusText: "Offline" })
+      );
     })
   );
 });
