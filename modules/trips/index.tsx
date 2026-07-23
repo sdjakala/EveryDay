@@ -1187,24 +1187,38 @@ export default function TripPlannerModule() {
                 )}
               </div>
 
-              {/* Translate button */}
-              <button
-                onClick={doTranslate}
-                disabled={!translateText.trim() || translateLoading}
-                style={{
-                  width: "100%", padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 600,
-                  border: "none",
-                  cursor: translateText.trim() && !translateLoading ? "pointer" : "default",
-                  background: translateText.trim() && !translateLoading
-                    ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)"
-                    : "rgba(255,255,255,0.05)",
-                  color: translateText.trim() && !translateLoading ? "#071018" : "var(--muted)",
-                  marginBottom: 16,
-                  transition: "background 0.15s",
-                }}
-              >
-                {translateLoading ? "Translating…" : `Translate to ${translateLanguage}`}
-              </button>
+              {/* Translate + Clear buttons */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                {translateText && (
+                  <button
+                    onClick={() => { setTranslateText(""); setTranslateResult(""); setTranslatePhonetic(""); setTranslateError(""); }}
+                    style={{
+                      padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                      border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer",
+                      background: "rgba(255,255,255,0.05)", color: "var(--muted)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+                <button
+                  onClick={doTranslate}
+                  disabled={!translateText.trim() || translateLoading}
+                  style={{
+                    flex: 1, padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                    border: "none",
+                    cursor: translateText.trim() && !translateLoading ? "pointer" : "default",
+                    background: translateText.trim() && !translateLoading
+                      ? "linear-gradient(90deg,var(--accent-start),var(--accent-end) 80%,#5c2fd4)"
+                      : "rgba(255,255,255,0.05)",
+                    color: translateText.trim() && !translateLoading ? "#071018" : "var(--muted)",
+                    transition: "background 0.15s",
+                  }}
+                >
+                  {translateLoading ? "Translating…" : `Translate to ${translateLanguage}`}
+                </button>
+              </div>
 
               {/* Error */}
               {translateError && (

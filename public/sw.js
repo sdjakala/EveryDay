@@ -261,20 +261,24 @@ self.addEventListener("fetch", (event) => {
   // Auth routes — never intercept, EXCEPT /me which we cache for offline support
   if (url.pathname.startsWith("/api/auth/") && url.pathname !== "/api/auth/me") return;
 
-  // /api/auth/me — network-first, cache fallback so the dashboard keeps the
-  // user authenticated offline after at least one successful online session.
+  // /api/auth/me — network-first, cache fallback so the dashboard stays
+  // authenticated offline after at least one successful online session.
+  // Store by URL string (not the Request object) to avoid cookie/mode mismatches
+  // between the online request that populated the cache and the offline lookup.
   if (url.pathname === "/api/auth/me") {
     event.respondWith(
       (async () => {
+        const CACHE_KEY = "/api/auth/me";
         try {
           const res = await fetch(request);
           if (res.ok) {
             const clone = res.clone();
-            caches.open(SHELL_CACHE).then((c) => c.put(request, clone));
+            caches.open(SHELL_CACHE).then((c) => c.put(CACHE_KEY, clone));
           }
           return res;
         } catch (_) {
-          const cached = await caches.match(request, { ignoreVary: true });
+          const cache = await caches.open(SHELL_CACHE);
+          const cached = await cache.match(CACHE_KEY);
           if (cached) return cached;
           return new Response(JSON.stringify({ error: "No session" }), {
             status: 401, headers: { "Content-Type": "application/json" },
@@ -289,9 +293,11 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname === "/api/modules" && request.method === "GET") {
     event.respondWith(
       (async () => {
-        const cached = await caches.match(request, { ignoreVary: true });
+        const CACHE_KEY = "/api/modules";
+        const cache = await caches.open(SHELL_CACHE);
+        const cached = await cache.match(CACHE_KEY);
         const freshen = fetch(request).then((res) => {
-          if (res.ok) { const clone = res.clone(); caches.open(SHELL_CACHE).then((c) => c.put(request, clone)); }
+          if (res.ok) { const clone = res.clone(); cache.put(CACHE_KEY, clone); }
           return res;
         }).catch(() => null);
         // Serve stale immediately and refresh in background; if no cache, wait for network.
