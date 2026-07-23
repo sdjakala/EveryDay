@@ -1,5 +1,7 @@
+// Version is informational only — the cache name is fixed so version bumps
+// never wipe cached assets and break offline for users.
 const VERSION    = "2.1.0";
-const SHELL_CACHE = `everyday-v${VERSION}`;
+const SHELL_CACHE = "everyday-shell";
 const TRIPS_CACHE = `everyday-trips-v1`;   // versioned separately — survives shell updates
 const SYNC_TAG    = "trips-mutations";
 const IDB_NAME    = "everyday-offline";
@@ -98,34 +100,32 @@ async function deleteFromTripsCache(tripId) {
 
 // ── Install / Activate ────────────────────────────────────────────────────────
 
+// Fetch the root HTML, parse out every Next.js chunk URL, and cache them all.
+// Called both during install and on demand (REFRESH_CACHE message).
+async function populateShellCache() {
+  const cache = await caches.open(SHELL_CACHE);
+  const shellRes = await fetch("/");
+  if (!shellRes.ok) return;
+  await cache.put("/", shellRes.clone());
+
+  const html = await shellRes.text();
+  const scripts = [...html.matchAll(/src="(\/_next\/static\/[^"]+\.js)"/g)].map((m) => m[1]);
+  const styles  = [...html.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]);
+
+  await Promise.allSettled(
+    ["/manifest.json", ...scripts, ...styles].map((url) =>
+      fetch(url)
+        .then((res) => { if (res.ok) return cache.put(url, res); })
+        .catch(() => {})
+    )
+  );
+  console.log(`SW: shell cached — ${scripts.length} scripts, ${styles.length} styles`);
+}
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
-    (async () => {
-      const cache = await caches.open(SHELL_CACHE);
-      try {
-        // Fetch the root HTML, then extract every Next.js chunk URL from it and
-        // pre-cache them all so the app shell works offline immediately after install.
-        const shellRes = await fetch("/");
-        if (!shellRes.ok) return;
-        await cache.put("/", shellRes.clone());
-
-        const html = await shellRes.text();
-        const scripts = [...html.matchAll(/src="(\/_next\/static\/[^"]+\.js)"/g)].map((m) => m[1]);
-        const styles  = [...html.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]);
-
-        await Promise.allSettled(
-          ["/manifest.json", ...scripts, ...styles].map((url) =>
-            fetch(url)
-              .then((res) => { if (res.ok) return cache.put(url, res); })
-              .catch((e) => console.warn("SW: skipping during install", url, e))
-          )
-        );
-        console.log(`SW: cached shell + ${scripts.length} scripts + ${styles.length} styles`);
-      } catch (e) {
-        console.warn("SW: install fetch failed (offline?)", e);
-      }
-    })()
+    populateShellCache().catch((e) => console.warn("SW: install cache failed (offline?)", e))
   );
 });
 
@@ -139,10 +139,9 @@ self.addEventListener("activate", (event) => {
         const allNames = await caches.keys();
         const newCache = await caches.open(SHELL_CACHE);
 
-        // Migrate entries from older shell caches into the new one before
-        // deleting them — this preserves offline coverage across version bumps
-        // so users don't lose the app after a SW update.
-        for (const oldName of allNames.filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE && n.startsWith("everyday-v"))) {
+        // Migrate entries from old versioned caches into everyday-shell before
+        // deleting them — preserves offline coverage for existing users.
+        for (const oldName of allNames.filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE && n.startsWith("everyday-"))) {
           const old = await caches.open(oldName);
           for (const req of await old.keys()) {
             if (!(await newCache.match(req))) {
@@ -155,7 +154,7 @@ self.addEventListener("activate", (event) => {
         }
 
         // Remove any unexpected cache names
-        for (const name of allNames.filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE && !n.startsWith("everyday-v"))) {
+        for (const name of allNames.filter((n) => n !== SHELL_CACHE && n !== TRIPS_CACHE && !n.startsWith("everyday-"))) {
           await caches.delete(name);
         }
       })(),
@@ -174,7 +173,25 @@ self.addEventListener("sync", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data?.type === "ONLINE")            replayMutations();
   if (event.data?.type === "GET_PENDING_COUNT") respondWithPendingCount(event);
+  if (event.data?.type === "CACHE_URLS")        warmCache(event.data.urls);
+  if (event.data?.type === "REFRESH_CACHE")     populateShellCache().catch(() => {});
 });
+
+// Pre-populate the cache with URLs the page reports having loaded.
+// This is how dynamic chunks (e.g. the trips module) get cached after the user
+// first visits that part of the app online.
+async function warmCache(urls) {
+  if (!urls?.length) return;
+  const cache = await caches.open(SHELL_CACHE);
+  await Promise.allSettled(
+    urls.map(async (url) => {
+      if (await cache.match(url, { ignoreVary: true })) return;
+      return fetch(url)
+        .then((res) => { if (res.ok) cache.put(url, res); })
+        .catch(() => {});
+    })
+  );
+}
 
 async function respondWithPendingCount(event) {
   const count   = await getPendingCount();

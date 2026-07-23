@@ -43,18 +43,42 @@ function checkForUpdates() {
   }
 }
 
+// Tell the active SW to cache every /_next/static/ URL the page has loaded.
+// This ensures dynamic chunks (lazily-imported modules) get into the cache
+// the first time the user visits that part of the app while online.
+function reportLoadedResourcesToSW() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.ready.then((reg) => {
+    if (!reg.active || !navigator.onLine) return;
+    const urls = performance
+      .getEntriesByType("resource")
+      .map((e) => (e as PerformanceResourceTiming).name)
+      .filter((n) => n.includes("/_next/static/"));
+    if (urls.length) reg.active.postMessage({ type: "CACHE_URLS", urls });
+  });
+}
+
 export default function App({ Component, pageProps }: AppProps) {
   useEffect(() => {
     registerServiceWorker();
     checkForUpdates();
 
-    // When connectivity is restored, tell the SW to replay queued mutations.
-    // This is the fallback for Safari which doesn't support the Background Sync API.
+    // Warm the SW cache with every /_next/ resource loaded this session.
+    // Delay slightly so dynamic imports have time to settle.
+    const warmTimer = setTimeout(reportLoadedResourcesToSW, 3000);
+
+    // When connectivity is restored, tell the SW to replay queued mutations
+    // (fallback for Safari which doesn't support Background Sync) and re-warm
+    // the cache in case new chunks loaded while we were online.
     function notifySWOnline() {
       navigator.serviceWorker?.controller?.postMessage({ type: "ONLINE" });
+      reportLoadedResourcesToSW();
     }
     window.addEventListener("online", notifySWOnline);
-    return () => window.removeEventListener("online", notifySWOnline);
+    return () => {
+      clearTimeout(warmTimer);
+      window.removeEventListener("online", notifySWOnline);
+    };
   }, []);
 
   return (

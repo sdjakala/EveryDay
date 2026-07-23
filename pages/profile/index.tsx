@@ -29,24 +29,19 @@ export default function ProfilePage() {
       });
   }, []);
 
-  async function clearAllCaches() {
-    if ('caches' in window) {
-      const cacheNames = await caches.keys();
-      await Promise.all(
-        cacheNames.map(cacheName => caches.delete(cacheName))
-      );
-      
-      // Unregister service worker
-      if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(
-          registrations.map(registration => registration.unregister())
-        );
+  async function updateApp() {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration('/');
+      if (reg) {
+        // Ask the SW to re-fetch and cache the latest shell + chunks right now.
+        reg.active?.postMessage({ type: 'REFRESH_CACHE' });
+        // Pull the latest sw.js — if it changed the SW will activate and the
+        // controllerchange handler in _app.tsx will reload automatically.
+        await reg.update();
       }
-      
-      alert('Cache cleared! Please reload the page.');
-      window.location.reload();
     }
+    // Small delay so the cache refresh has a moment to start before reload.
+    setTimeout(() => window.location.reload(), 500);
   }
 
   if (loading) {
@@ -113,8 +108,8 @@ export default function ProfilePage() {
             </button>
           </Link>
 
-          <button onClick={clearAllCaches}>
-            Clear App Cache & Reload
+          <button onClick={updateApp} className="btn secondary" style={{ width: "100%" }}>
+            Update App & Reload
           </button>
         </div>
       </div>
