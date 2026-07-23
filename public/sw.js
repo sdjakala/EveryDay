@@ -257,7 +257,7 @@ self.addEventListener("fetch", (event) => {
           }
           return res;
         } catch (_) {
-          const cached = await caches.match(request);
+          const cached = await caches.match(request, { ignoreVary: true });
           if (cached) return cached;
           return new Response(JSON.stringify({ error: "No session" }), {
             status: 401, headers: { "Content-Type": "application/json" },
@@ -272,7 +272,7 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname === "/api/modules" && request.method === "GET") {
     event.respondWith(
       (async () => {
-        const cached = await caches.match(request);
+        const cached = await caches.match(request, { ignoreVary: true });
         const freshen = fetch(request).then((res) => {
           if (res.ok) { const clone = res.clone(); caches.open(SHELL_CACHE).then((c) => c.put(request, clone)); }
           return res;
@@ -328,13 +328,15 @@ self.addEventListener("fetch", (event) => {
           const preloaded = await event.preloadResponse;
           const res = preloaded || await fetch(request);
           const clone = res.clone();
-          caches.open(SHELL_CACHE).then((c) => c.put(request, clone));
+          // Store by pathname string, not by Request object, so Vary headers on the
+          // response (e.g. Vary: Cookie) don't prevent cache hits on future lookups.
+          caches.open(SHELL_CACHE).then((c) => c.put(url.pathname, clone));
           return res;
         } catch (_) {
-          const cached = await caches.match(request);
+          // ignoreVary so a changed session cookie doesn't block the cache hit.
+          const cached = await caches.match(url.pathname, { ignoreVary: true })
+                      || await caches.match("/",           { ignoreVary: true });
           if (cached) return cached;
-          const shell = await caches.match("/");
-          if (shell) return shell;
           return new Response(
             "<!DOCTYPE html><html><head><meta charset=utf-8><title>Offline</title></head>" +
             "<body style='font-family:sans-serif;padding:2rem'>" +
@@ -349,7 +351,7 @@ self.addEventListener("fetch", (event) => {
 
   // Static assets — cache-first
   event.respondWith(
-    caches.match(request).then((cached) => {
+    caches.match(request, { ignoreVary: true }).then((cached) => {
       if (cached) return cached;
       return fetch(request).then((res) => {
         if (res.ok && res.type === "basic") {
