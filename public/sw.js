@@ -102,8 +102,14 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(SHELL_CACHE).then((cache) =>
-      cache.addAll(["/", "/styles/globals.css", "/manifest.json"]).catch((e) =>
-        console.error("SW: install cache failed", e)
+      // Fetch each resource independently so one 404 can't abort the whole install
+      Promise.allSettled(
+        ["/", "/manifest.json"].map((url) =>
+          fetch(url).then((res) => {
+            if (res.ok) return cache.put(url, res);
+            console.warn("SW: skipping non-ok resource during install", url, res.status);
+          }).catch((e) => console.warn("SW: failed to fetch during install", url, e))
+        )
       )
     )
   );
@@ -241,7 +247,18 @@ self.addEventListener("fetch", (event) => {
           caches.open(SHELL_CACHE).then((c) => c.put(request, res.clone()));
           return res;
         })
-        .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          const shell = await caches.match("/");
+          if (shell) return shell;
+          return new Response(
+            "<!DOCTYPE html><html><head><meta charset=utf-8><title>Offline</title></head>" +
+            "<body style='font-family:sans-serif;padding:2rem'>" +
+            "<h2>You're offline</h2><p>Reload when you're back online.</p></body></html>",
+            { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } }
+          );
+        })
     );
     return;
   }
