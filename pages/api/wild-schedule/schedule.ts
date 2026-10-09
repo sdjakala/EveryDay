@@ -1,5 +1,15 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
+// NHL seasons start in October. If it's Oct or later, the season is
+// currentYear + (currentYear+1); otherwise it's (currentYear-1) + currentYear.
+function getCurrentSeason(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1; // 1-indexed
+  const startYear = month >= 10 ? year : year - 1;
+  return `${startYear}${startYear + 1}`;
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -9,7 +19,7 @@ export default async function handler(
     return res.status(405).end('Method Not Allowed');
   }
 
-  const { team = 'MIN', season = '20252026' } = req.query;
+  const { team = 'MIN', season = getCurrentSeason() } = req.query;
 
   try {
     const apiUrl = `https://api-web.nhle.com/v1/club-schedule-season/${team}/${season}`;

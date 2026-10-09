@@ -44,6 +44,20 @@ type RouteEstimate = {
   timestamp: string;
 };
 
+function getTimeBasedDefaults(locs: SavedLocation[]): { origin: string; destination: string } {
+  const hour = new Date().getHours();
+  const home = locs.find(l => /home/i.test(l.name));
+  const work = locs.find(l => /work|office/i.test(l.name));
+
+  if (home && work) {
+    if (hour >= 6 && hour < 12) return { origin: home.id, destination: work.id };
+    if (hour >= 12 && hour < 18) return { origin: work.id, destination: home.id };
+  }
+
+  // Outside commute hours or locations not named Home/Work — fall back to list order
+  return { origin: locs[0].id, destination: locs[1].id };
+}
+
 export default function TrafficModule() {
   const [locations, setLocations] = useState<SavedLocation[]>([]);
   const [selectedOrigin, setSelectedOrigin] = useState<string>("");
@@ -78,10 +92,12 @@ export default function TrafficModule() {
       const res = await fetch("/api/traffic/locations");
       if (res.ok) {
         const data = await res.json();
-        setLocations(data.locations || []);
-        if (data.locations.length >= 2) {
-          setSelectedOrigin(data.locations[0].id);
-          setSelectedDestination(data.locations[1].id);
+        const locs: SavedLocation[] = data.locations || [];
+        setLocations(locs);
+        if (locs.length >= 2) {
+          const defaults = getTimeBasedDefaults(locs);
+          setSelectedOrigin(defaults.origin);
+          setSelectedDestination(defaults.destination);
         }
       }
     } catch (e) {

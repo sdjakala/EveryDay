@@ -91,7 +91,7 @@ export default function WildScheduleModule() {
       setLoading(true);
       setError(null);
       
-      const res = await fetch("/api/wild-schedule/schedule?team=MIN&season=20252026");
+      const res = await fetch("/api/wild-schedule/schedule?team=MIN");
       
       if (!res.ok) {
         throw new Error("Failed to fetch schedule");
